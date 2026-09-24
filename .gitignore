@@ -1,0 +1,5 @@
+venv/
+data/warehouse/
+__pycache__/
+.env
+*.pyc
