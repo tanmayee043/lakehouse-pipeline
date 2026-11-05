@@ -1,0 +1,9 @@
+# Paths are relative to dbt_project/, the folder dbt runs from.
+# Override with env vars when running from elsewhere (Dagster sets these).
+lakehouse:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('LAKEHOUSE_DUCKDB_PATH', '../data/warehouse/lakehouse.duckdb') }}"
+      threads: 4
