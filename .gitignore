@@ -5,4 +5,5 @@ __pycache__/
 
 # Generated data: rebuilt by the pipeline, never committed
 data/raw_json/
-data/warehouse/
+data/warehouse/*
+!data/warehouse/.gitkeep

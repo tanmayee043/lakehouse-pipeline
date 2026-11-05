@@ -1,0 +1,67 @@
+version: 2
+
+models:
+  - name: dim_city
+    description: One row per tracked city, with its timezone and last fetch time.
+    columns:
+      - name: city_id
+        data_tests: [unique, not_null]
+      - name: timezone
+        description: Null would mean no forecast has ever been fetched for this city.
+        data_tests: [not_null]
+      - name: last_fetched_at_utc
+        description: When the newest forecast for this city was fetched.
+
+  - name: fct_weather_hourly
+    description: Latest available forecast for every city and hour. Grain is city_id + forecast_hour_utc.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [city_id, forecast_hour_utc]
+    columns:
+      - name: city_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('dim_city'), field: city_id}
+      - name: forecast_date_local
+        description: Calendar date in the city's own timezone.
+      - name: temperature_c
+        description: Air temperature at 2 m, °C.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments: {min_value: -90, max_value: 60}
+      - name: precipitation_mm
+        description: Rain, showers and snow in the preceding hour, mm.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0}
+      - name: wind_speed_kmh
+        description: Wind speed at 10 m, km/h.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 400}
+
+  - name: fct_weather_daily
+    description: Daily summary per city over its local calendar day. Grain is city_id + forecast_date_local.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [city_id, forecast_date_local]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "temperature_min_c <= temperature_avg_c and temperature_avg_c <= temperature_max_c"
+    columns:
+      - name: city_id
+        data_tests:
+          - relationships:
+              arguments: {to: ref('dim_city'), field: city_id}
+      - name: rainy_hours
+        description: Hours with any precipitation.
+      - name: hours_observed
+        description: Hourly rows behind this day.
+      - name: is_complete_day
+        description: True when every hour of the local day is present (23 or 25 on DST change days).

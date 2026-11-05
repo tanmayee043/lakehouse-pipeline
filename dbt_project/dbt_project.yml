@@ -1,0 +1,16 @@
+name: lakehouse
+version: "1.0.0"
+config-version: 2
+profile: lakehouse
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+clean-targets: ["target", "dbt_packages"]
+
+# Everything is a table: staging reads files by relative path, so views would only
+# work from this folder. Tables keep the DuckDB file self-contained for the
+# dashboard, and a full rebuild takes seconds at this data size.
+models:
+  lakehouse:
+    +materialized: table

@@ -72,7 +72,9 @@ def fetch_weather(session: requests.Session, lat: float, lng: float) -> dict:
             "longitude": lng,
             "hourly": HOURLY_VARIABLES,
             "forecast_days": FORECAST_DAYS,
-            "timezone": "GMT",  # keep every city on one clock; convert in the models
+            # Local wall-clock times plus the IANA zone name (e.g. "Asia/Tokyo"),
+            # so the models can build both local days and DST-correct UTC timestamps.
+            "timezone": "auto",
         },
         timeout=10,
     )
