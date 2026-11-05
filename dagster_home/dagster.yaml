@@ -1,0 +1,9 @@
+# Dagster instance config. Point DAGSTER_HOME at this folder so run history,
+# schedules and logs persist between `dagster dev` sessions.
+telemetry:
+  enabled: false
+
+python_logs:
+  # Show the ingestion script's own log lines in the Dagster run view.
+  managed_python_loggers:
+    - fetch_weather

@@ -6,3 +6,12 @@ urllib3==2.8.0
 duckdb==2.0.0
 dbt-core==1.12.6
 dbt-duckdb==1.11.1
+
+# Orchestration
+dagster==1.13.29
+dagster-webserver==1.13.29
+dagster-dbt==0.29.29
+
+# dbt needs protobuf 6; without these pins pip pulls protobuf 7 for Dagster.
+protobuf==6.33.6
+grpcio-health-checking==1.81.1
