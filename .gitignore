@@ -7,3 +7,11 @@ __pycache__/
 data/raw_json/
 data/warehouse/*
 !data/warehouse/.gitkeep
+
+# Dagster run history and logs (keep only the instance config)
+dagster_home/*
+!dagster_home/dagster.yaml
+.tmp_dagster_home_*/
+
+# Local editor/agent settings
+.claude/
