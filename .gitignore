@@ -1,5 +1,8 @@
 venv/
-data/warehouse/
 __pycache__/
-.env
 *.pyc
+.env
+
+# Generated data: rebuilt by the pipeline, never committed
+data/raw_json/
+data/warehouse/
