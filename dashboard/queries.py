@@ -7,11 +7,7 @@ import duckdb
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DUCKDB_PATH = Path(
-    os.environ.get(
-        "LAKEHOUSE_DUCKDB_PATH", PROJECT_ROOT / "data" / "warehouse" / "lakehouse.duckdb"
-    )
-)
+DUCKDB_PATH = Path(os.environ.get("LAKEHOUSE_DUCKDB_PATH", PROJECT_ROOT / "data" / "warehouse" / "lakehouse.duckdb"))
 
 
 class WarehouseUnavailable(Exception):
@@ -20,9 +16,7 @@ class WarehouseUnavailable(Exception):
 
 def _query(sql: str, params: list | None = None) -> pd.DataFrame:
     if not DUCKDB_PATH.exists():
-        raise WarehouseUnavailable(
-            f"No warehouse found at {DUCKDB_PATH}. Run the pipeline once to build it."
-        )
+        raise WarehouseUnavailable(f"No warehouse found at {DUCKDB_PATH}. Run the pipeline once to build it.")
     try:
         # read_only lets the dashboard run alongside Dagster without taking the write lock.
         with duckdb.connect(str(DUCKDB_PATH), read_only=True) as con:

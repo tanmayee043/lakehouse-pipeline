@@ -1,52 +1,88 @@
 version: 2
 
+# Marts are what the dashboard reads, so their shape is a contract: dbt refuses to
+# build them if a column is missing, extra, or has a different type.
 models:
   - name: dim_city
     description: One row per tracked city, with its timezone and last fetch time.
+    config:
+      contract: {enforced: true}
     columns:
       - name: city_id
-        data_tests: [unique, not_null]
+        data_type: varchar
+        constraints: [{type: not_null}]
+        data_tests: [unique]
+      - name: city_name
+        data_type: varchar
+      - name: country
+        data_type: varchar
+      - name: population
+        data_type: bigint
+      - name: latitude
+        data_type: double
+      - name: longitude
+        data_type: double
       - name: timezone
+        data_type: varchar
         description: Null would mean no forecast has ever been fetched for this city.
         data_tests: [not_null]
       - name: last_fetched_at_utc
+        data_type: timestamp
         description: When the newest forecast for this city was fetched.
 
   - name: fct_weather_hourly
     description: Latest available forecast for every city and hour. Grain is city_id + forecast_hour_utc.
+    config:
+      contract: {enforced: true}
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [city_id, forecast_hour_utc]
     columns:
       - name: city_id
+        data_type: varchar
+        constraints: [{type: not_null}]
         data_tests:
-          - not_null
           - relationships:
               arguments: {to: ref('dim_city'), field: city_id}
+      - name: forecast_hour_utc
+        data_type: timestamp
+        constraints: [{type: not_null}]
+      - name: forecast_hour_local
+        data_type: timestamp
+        description: Wall-clock hour in the city's own timezone.
       - name: forecast_date_local
+        data_type: date
         description: Calendar date in the city's own timezone.
       - name: temperature_c
+        data_type: double
         description: Air temperature at 2 m, °C.
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
               arguments: {min_value: -90, max_value: 60}
       - name: precipitation_mm
+        data_type: double
         description: Rain, showers and snow in the preceding hour, mm.
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
               arguments: {min_value: 0}
       - name: wind_speed_kmh
+        data_type: double
         description: Wind speed at 10 m, km/h.
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
               arguments: {min_value: 0, max_value: 400}
+      - name: fetched_at_utc
+        data_type: timestamp
+        description: When the run that produced this value was fetched.
 
   - name: fct_weather_daily
     description: Daily summary per city over its local calendar day. Grain is city_id + forecast_date_local.
+    config:
+      contract: {enforced: true}
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -56,12 +92,30 @@ models:
             expression: "temperature_min_c <= temperature_avg_c and temperature_avg_c <= temperature_max_c"
     columns:
       - name: city_id
+        data_type: varchar
+        constraints: [{type: not_null}]
         data_tests:
           - relationships:
               arguments: {to: ref('dim_city'), field: city_id}
+      - name: forecast_date_local
+        data_type: date
+        constraints: [{type: not_null}]
+      - name: temperature_min_c
+        data_type: double
+      - name: temperature_max_c
+        data_type: double
+      - name: temperature_avg_c
+        data_type: double
+      - name: precipitation_total_mm
+        data_type: double
       - name: rainy_hours
+        data_type: bigint
         description: Hours with any precipitation.
+      - name: wind_speed_max_kmh
+        data_type: double
       - name: hours_observed
+        data_type: bigint
         description: Hourly rows behind this day.
       - name: is_complete_day
+        data_type: boolean
         description: True when every hour of the local day is present (23 or 25 on DST change days).

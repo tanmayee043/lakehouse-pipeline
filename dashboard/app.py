@@ -4,6 +4,7 @@ Run from the repo root:  streamlit run dashboard/app.py
 """
 
 from datetime import datetime, timezone
+from itertools import pairwise
 
 import altair as alt
 import pandas as pd
@@ -70,10 +71,10 @@ def temperature_rgb(temp_c: float) -> list[int]:
     """Linear interpolation between TEMPERATURE_STOPS, clamped at both ends."""
     if temp_c <= TEMPERATURE_STOPS[0][0]:
         return list(TEMPERATURE_STOPS[0][1])
-    for (t0, c0), (t1, c1) in zip(TEMPERATURE_STOPS, TEMPERATURE_STOPS[1:]):
+    for (t0, c0), (t1, c1) in pairwise(TEMPERATURE_STOPS):
         if temp_c <= t1:
             f = (temp_c - t0) / (t1 - t0)
-            return [round(a + (b - a) * f) for a, b in zip(c0, c1)]
+            return [round(a + (b - a) * f) for a, b in zip(c0, c1, strict=True)]
     return list(TEMPERATURE_STOPS[-1][1])
 
 
@@ -131,8 +132,9 @@ def hourly_chart(
     layers = [marks, crosshair]
     if not bars:
         layers.append(
-            base.mark_circle(color=color, size=64, stroke="white", strokeWidth=2)
-            .encode(y=y, opacity=alt.condition(hover, alt.value(1), alt.value(0)))
+            base.mark_circle(color=color, size=64, stroke="white", strokeWidth=2).encode(
+                y=y, opacity=alt.condition(hover, alt.value(1), alt.value(0))
+            )
         )
 
     if df["forecast_hour_local"].min() <= now <= df["forecast_hour_local"].max():
@@ -140,11 +142,12 @@ def hourly_chart(
         now_rule = alt.Chart(now_df).encode(x="forecast_hour_local:T")
         layers += [
             now_rule.mark_rule(color=MUTED_INK, strokeDash=[4, 4]),
-            now_rule.mark_text(align="left", dx=4, baseline="top", color=MUTED_INK, fontSize=11)
-            .encode(text="label:N", y=alt.value(2)),
+            now_rule.mark_text(align="left", dx=4, baseline="top", color=MUTED_INK, fontSize=11).encode(
+                text="label:N", y=alt.value(2)
+            ),
         ]
 
-    return alt.layer(*layers).properties(title=title, height=height)
+    return alt.LayerChart(layer=layers, title=title, height=height)
 
 
 def stop_with(error: Exception) -> None:
@@ -175,16 +178,17 @@ forecast_tab, compare_tab, health_tab = st.tabs(["City forecast", "Compare citie
 
 # ----- City forecast -----
 with forecast_tab:
-    labels = {
-        row.city_id: f"{row.city_name}, {row.country}" for row in city_df.itertuples()
-    }
+    labels = {row.city_id: f"{row.city_name}, {row.country}" for row in city_df.itertuples()}
     default_city = "london" if "london" in labels else city_df["city_id"].iloc[0]
-    city_id = st.selectbox(
-        "City",
-        options=list(labels),
-        index=list(labels).index(default_city),
-        format_func=labels.get,
-        help="Type to search all cities.",
+    city_id = (
+        st.selectbox(
+            "City",
+            options=list(labels),
+            index=list(labels).index(default_city),
+            format_func=lambda c: labels[c],
+            help="Type to search all cities.",
+        )
+        or default_city
     )
     city = city_df.set_index("city_id").loc[city_id]
     now = pd.Timestamp(city["local_now"]).floor("h")
@@ -210,7 +214,9 @@ with forecast_tab:
         else "—",
     )
     m3.metric("Rain, next 7 days", f"{upcoming['precipitation_total_mm'].sum():.1f} mm" if not upcoming.empty else "—")
-    m4.metric("Peak wind, next 7 days", f"{upcoming['wind_speed_max_kmh'].max():.0f} km/h" if not upcoming.empty else "—")
+    m4.metric(
+        "Peak wind, next 7 days", f"{upcoming['wind_speed_max_kmh'].max():.0f} km/h" if not upcoming.empty else "—"
+    )
     if current.empty:
         st.warning(
             "The stored forecast doesn't cover the current hour, so the data is out of date. "
@@ -237,7 +243,7 @@ with forecast_tab:
 
     st.subheader("Daily summary")
     table = city_daily.assign(
-        day=[day_label(o, d) for o, d in zip(city_daily["day_offset"], city_daily["forecast_date_local"])]
+        day=[day_label(o, d) for o, d in zip(city_daily["day_offset"], city_daily["forecast_date_local"], strict=True)]
     )
     st.dataframe(
         table[
@@ -376,10 +382,12 @@ with health_tab:
     h1.metric("Cities with forecasts", f"{(health_df['hourly_rows'] > 0).sum()} / {len(health_df)}")
     h2.metric("Hourly rows", f"{health_df['hourly_rows'].sum():,}")
     h3.metric("Complete local days", f"{complete:.0%}")
-    h4.metric("Forecast reaches", f"{health_df['forecast_ends_utc'].min():%b %d} UTC", help="Earliest end across cities")
+    h4.metric(
+        "Forecast reaches", f"{health_df['forecast_ends_utc'].min():%b %d} UTC", help="Earliest end across cities"
+    )
 
     st.caption(
-        "Run history, retries and the 29 dbt test results live in the Dagster UI (`dagster dev`, then open http://localhost:3000)."
+        "Run history, retries and every dbt test result live in the Dagster UI (`dagster dev`, then open http://localhost:3000)."
     )
     st.dataframe(
         health_df,
