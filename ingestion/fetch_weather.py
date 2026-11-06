@@ -12,6 +12,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import sys
 import time
 import unicodedata
@@ -33,6 +34,35 @@ REQUEST_DELAY_SECONDS = 0.5  # be a polite API citizen, no need to hammer it
 
 log = logging.getLogger("fetch_weather")
 
+# Fields passed via `extra=` that the JSON formatter copies into each log line.
+LOG_FIELDS = ("city", "run_date", "path", "succeeded", "failed")
+
+
+class JsonFormatter(logging.Formatter):
+    """One JSON object per line, so log tools can filter by level, logger or city."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry = {
+            "time": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        entry.update({k: getattr(record, k) for k in LOG_FIELDS if hasattr(record, k)})
+        if record.exc_info:
+            entry["exception"] = self.formatException(record.exc_info)
+        # ASCII-only output ("Montréal") stays valid whatever encoding the console or log file uses.
+        return json.dumps(entry)
+
+
+def setup_logging(log_format: str) -> None:
+    handler = logging.StreamHandler()
+    if log_format == "json":
+        handler.setFormatter(JsonFormatter())
+    else:
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S"))
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
 
 def slugify(city_name: str) -> str:
     """ASCII-only file name: "Montréal" -> "montreal", "Chiang Mai" -> "chiang_mai"."""
@@ -53,31 +83,28 @@ def make_session() -> requests.Session:
     return session
 
 
-def load_cities() -> list[dict]:
-    with open(CITIES_CSV, newline="", encoding="utf-8") as f:
+def load_cities(cities_csv: Path = CITIES_CSV) -> list[dict]:
+    with open(cities_csv, newline="", encoding="utf-8") as f:
         cities = list(csv.DictReader(f))
 
     slugs = [slugify(row["city"]) for row in cities]
     duplicates = sorted({s for s in slugs if slugs.count(s) > 1})
     if duplicates:
-        raise ValueError(f"Duplicate city file names in {CITIES_CSV.name}: {duplicates}")
+        raise ValueError(f"Duplicate city file names in {cities_csv.name}: {duplicates}")
     return cities
 
 
 def fetch_weather(session: requests.Session, lat: float, lng: float) -> dict:
-    response = session.get(
-        API_URL,
-        params={
-            "latitude": lat,
-            "longitude": lng,
-            "hourly": HOURLY_VARIABLES,
-            "forecast_days": FORECAST_DAYS,
-            # Local wall-clock times plus the IANA zone name (e.g. "Asia/Tokyo"),
-            # so the models can build both local days and DST-correct UTC timestamps.
-            "timezone": "auto",
-        },
-        timeout=10,
-    )
+    params: dict[str, str | int | float] = {
+        "latitude": lat,
+        "longitude": lng,
+        "hourly": HOURLY_VARIABLES,
+        "forecast_days": FORECAST_DAYS,
+        # Local wall-clock times plus the IANA zone name (e.g. "Asia/Tokyo"),
+        # so the models can build both local days and DST-correct UTC timestamps.
+        "timezone": "auto",
+    }
+    response = session.get(API_URL, params=params, timeout=10)
     response.raise_for_status()
     return response.json()
 
@@ -90,15 +117,27 @@ def write_json(path: Path, record: dict) -> None:
     tmp_path.replace(path)
 
 
-def run(run_date: date) -> list[str]:
+def run(
+    run_date: date,
+    *,
+    cities_csv: Path = CITIES_CSV,
+    raw_json_dir: Path = RAW_JSON_DIR,
+    session: requests.Session | None = None,
+    delay_seconds: float = REQUEST_DELAY_SECONDS,
+) -> list[str]:
     """Fetch every city for run_date. Returns the names of cities that failed."""
-    out_dir = RAW_JSON_DIR / f"fetched_on={run_date.isoformat()}"
+    out_dir = raw_json_dir / f"fetched_on={run_date.isoformat()}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    cities = load_cities()
-    session = make_session()
+    cities = load_cities(cities_csv)
+    session = session or make_session()
     failed = []
-    log.info("Fetching weather for %d cities into %s", len(cities), out_dir)
+    log.info(
+        "Fetching weather for %d cities into %s",
+        len(cities),
+        out_dir,
+        extra={"run_date": run_date.isoformat(), "path": str(out_dir)},
+    )
 
     for row in cities:
         city = row["city"]
@@ -108,7 +147,7 @@ def run(run_date: date) -> list[str]:
         try:
             weather_data = fetch_weather(session, lat, lng)
         except requests.RequestException as e:
-            log.error("FAILED %s: %s", city, e)
+            log.error("FAILED %s: %s", city, e, extra={"city": city})
             failed.append(city)
             continue
 
@@ -128,10 +167,16 @@ def run(run_date: date) -> list[str]:
 
         out_path = out_dir / f"{slugify(city)}.json"
         write_json(out_path, record)
-        log.info("OK %s -> %s", city, out_path.relative_to(PROJECT_ROOT))
-        time.sleep(REQUEST_DELAY_SECONDS)
+        log.info("OK %s -> %s", city, out_path.name, extra={"city": city, "path": str(out_path)})
+        time.sleep(delay_seconds)
 
-    log.info("Done: %d succeeded, %d failed", len(cities) - len(failed), len(failed))
+    succeeded = len(cities) - len(failed)
+    log.info(
+        "Done: %d succeeded, %d failed",
+        succeeded,
+        len(failed),
+        extra={"run_date": run_date.isoformat(), "succeeded": succeeded, "failed": len(failed)},
+    )
     return failed
 
 
@@ -143,13 +188,15 @@ def main() -> int:
         default=date.today(),
         help="run date used for the output folder (default: today)",
     )
+    parser.add_argument(
+        "--log-format",
+        choices=("text", "json"),
+        default=os.environ.get("LOG_FORMAT", "text"),
+        help="text for people, json for log tools (default: $LOG_FORMAT or text)",
+    )
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    setup_logging(args.log_format)
     failed = run(args.date)
     return 1 if failed else 0
 

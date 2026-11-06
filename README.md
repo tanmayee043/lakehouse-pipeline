@@ -1,5 +1,7 @@
 # Lakehouse Pipeline
 
+[![CI](https://github.com/tanmayee043/lakehouse-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/tanmayee043/lakehouse-pipeline/actions/workflows/ci.yml)
+
 A batch data pipeline that lands raw API data, turns it into tested analytics tables, and runs on a schedule, built with the same layering, testing and orchestration patterns used on production data platforms.
 
 The first dataset is a **7-day hourly weather forecast for 79 world cities** from [Open-Meteo](https://open-meteo.com/) (free, no API key). Crypto trade history from the [crypto streaming platform](https://github.com/tanmayee043/crypto-streaming-platform) is planned as the second source (see [Roadmap](#roadmap)).
@@ -40,10 +42,13 @@ Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`.
 | Guarantee | How it's enforced | How it was proven |
 |---|---|---|
 | A run never builds on partial data | The ingestion step fails if any city fails to fetch, so dbt doesn't run | Pointed ingestion at a bad URL: failure logged and reported, no partial files left behind (writes go through a temp file) |
-| Re-running the pipeline doesn't duplicate rows | Same-day runs overwrite the same files; `int_weather_latest` keeps one row per city and hour | Added a fake older run with +50 °C temperatures: staging held both runs (26,544 rows), the marts kept only the newest (13,272 rows, 0 from the old run) |
+| Re-running a day changes nothing | Same-day runs overwrite the same files; every table is rebuilt from them | Automated test (`test_running_the_whole_pipeline_twice_for_a_day_changes_nothing`): runs the real ingestion and `dbt build` twice for the same day and compares every mart's row count and row checksum. They match; a rerun with values changed by 0.1 °C is detected |
+| Overlapping forecasts don't duplicate rows | `int_weather_latest` keeps the newest run's value for each city and hour | Automated test on sample data where the older run is 1 °C warmer: no older value appears in the overlap. Also checked on real data with a fake +50 °C run: staging held both runs (26,544 rows), the marts only the newest (13,272) |
 | Every city has data | Custom test `assert_every_city_has_forecast` | Removed one city's file: the test and `not_null_dim_city_timezone` both failed |
-| Values are plausible | 29 dbt tests: unique and not-null keys, uniqueness on each table's grain, relationships, ranges (temperature −90 to 60 °C, wind 0–400 km/h, precipitation ≥ 0), daily min ≤ avg ≤ max | Run on every `dbt build`; each shows as an asset check in Dagster |
-| Time zones are right | Raw data keeps local wall-clock time plus the IANA zone; UTC is derived with DuckDB's DST-aware conversion | New York 00:00 local = 05:00 UTC (EST); Montréal resolves to `America/Toronto` |
+| Values are plausible | 27 dbt tests: uniqueness on keys and on each table's grain, relationships, ranges (temperature −90 to 60 °C, wind 0–400 km/h, precipitation ≥ 0), daily min ≤ avg ≤ max | Run on every `dbt build`, locally and in CI; each shows as an asset check in Dagster |
+| The dashboard's tables keep their shape | Enforced dbt contracts on the three marts: column names, types and not-null keys | dbt refuses to build a mart whose columns drift |
+| Data is fresh | `dbt source freshness`: warns after 26 h, errors after 50 h; the dashboard's health tab shows the same status | Passes on the daily data |
+| Time zones are right | Raw data keeps local wall-clock time plus the IANA zone; UTC is derived with DuckDB's DST-aware conversion | Automated test checks the offsets for London (0), Montréal (−5) and Sydney (+11); on real data New York 00:00 local = 05:00 UTC |
 | Transient API errors don't fail the run | HTTP 429/5xx retried with backoff (1, 2, 4, 8 s); the whole step retried twice by Dagster | Not yet exercised against a real outage; 79/79 cities fetched on every run so far |
 
 The dashboard's **Pipeline health** tab shows freshness (fresh, stale or out of date, each with an icon and a label), city coverage and complete-day percentage.
@@ -53,10 +58,13 @@ The dashboard's **Pipeline health** tab shows freshness (fresh, stale or out of 
 Measured on a laptop (i5-1135G7, 12 GB RAM):
 
 - **79 cities × 168 hours = 13,272 hourly rows** per daily run, plus 553 daily summary rows
-- **`dbt build`: 6 models + 29 tests in about 7 s**
+- **`dbt build`: 6 models + 27 tests in about 7 s**
+- **Test suite: 18 pytest tests (10 unit, 8 integration and smoke) in about 35 s**
 - **Full Dagster run: about 2 min 20 s**, mostly the deliberate 0.5 s pause between API calls
 
 ## Design decisions
+
+Each has a longer write-up in [docs/adr](docs/adr/README.md).
 
 - **DuckDB as the warehouse.** No server, free, and it reads JSON and CSV directly. At about 13k rows a day it's far from its limits.
 - **Raw files kept as the source of truth.** Every table can be rebuilt from `data/raw_json/` with one `dbt build`.
@@ -101,7 +109,8 @@ Open http://localhost:3000 → **Jobs → daily_weather_pipeline → Materialize
 python ingestion/fetch_weather.py          # fetch today's forecasts
 cd dbt_project
 dbt deps --profiles-dir .
-dbt build --profiles-dir .                 # build all tables and run all 29 tests
+dbt build --profiles-dir .                 # build all tables, run all tests and contract checks
+dbt source freshness --profiles-dir .      # warn if the newest data is over 26 h old
 cd ..
 ```
 
@@ -112,6 +121,20 @@ streamlit run dashboard/app.py
 ```
 
 Open http://localhost:8501.
+
+How to handle failures (API outage, locked warehouse, stale data) is in the [runbook](docs/runbook.md).
+
+## Development
+
+```powershell
+pip install -r requirements-dev.txt
+ruff check .
+ruff format --check .
+mypy .
+pytest
+```
+
+Tests never touch `data/` or the network: integration tests build throwaway warehouses from the sample data in `tests/data/` (3 cities, two overlapping runs). CI runs the same checks, plus `dbt build` on the sample data, on every push and pull request.
 
 ## Project layout
 
@@ -126,10 +149,14 @@ dbt_project/                    dbt-duckdb project
 dagster_project/                Assets, job and schedule
 dagster_home/dagster.yaml       Dagster instance config (run history is gitignored)
 dashboard/                      Streamlit app (queries.py = data access, app.py = UI)
+tests/                          Unit, integration and smoke tests; tests/data/ is the CI sample
+docs/adr/                       Architecture decision records
+docs/runbook.md                 What to do when something breaks
+.github/workflows/ci.yml        Lint, types, dbt build and tests on every push
 ```
 
 ## Roadmap
 
 - **Crypto trade history from Project 1.** Add the streaming platform's captured trades and exchange trade history as new sources in their own `crypto/` folders beside `weather/`, then reconcile them daily (match %, missing trade IDs, price mismatches).
 - Incremental dbt models and daily partitions in Dagster for the trade data, which, unlike forecasts, can be backfilled.
-- Apache Iceberg for the raw layer, and CI that runs `dbt build` on every pull request.
+- Apache Iceberg for the raw layer.

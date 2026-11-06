@@ -15,9 +15,7 @@ DBT_PROJECT_DIR = PROJECT_ROOT / "dbt_project"
 # profiles.yml and _sources.yml default to paths relative to dbt_project/.
 # Absolute paths make the dbt runs independent of the folder Dagster starts in.
 os.environ.setdefault("LAKEHOUSE_DATA_DIR", str(PROJECT_ROOT / "data"))
-os.environ.setdefault(
-    "LAKEHOUSE_DUCKDB_PATH", str(PROJECT_ROOT / "data" / "warehouse" / "lakehouse.duckdb")
-)
+os.environ.setdefault("LAKEHOUSE_DUCKDB_PATH", str(PROJECT_ROOT / "data" / "warehouse" / "lakehouse.duckdb"))
 # dagster-dbt calls `dbt` by name. Put the venv's scripts folder first on PATH so it
 # finds the dbt installed alongside this Python even when the venv isn't activated.
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
