@@ -37,7 +37,8 @@ jobs:
     env:
       # dbt reads the committed sample data, never the live API.
       LAKEHOUSE_DATA_DIR: ${{ github.workspace }}/tests/data
-      LAKEHOUSE_DUCKDB_PATH: ${{ runner.temp }}/ci.duckdb
+      # Job-level env can't use the `runner` context, so keep the warehouse in the workspace.
+      LAKEHOUSE_DUCKDB_PATH: ${{ github.workspace }}/ci.duckdb
       DBT_PROFILES_DIR: ${{ github.workspace }}/dbt_project
     steps:
       - uses: actions/checkout@v4
