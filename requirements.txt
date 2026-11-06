@@ -15,3 +15,9 @@ dagster-dbt==0.29.29
 # dbt needs protobuf 6; without these pins pip pulls protobuf 7 for Dagster.
 protobuf==6.33.6
 grpcio-health-checking==1.81.1
+
+# Dashboard
+streamlit==1.67.0
+altair==6.3.0
+pandas==3.1.1
+pydeck==0.9.3

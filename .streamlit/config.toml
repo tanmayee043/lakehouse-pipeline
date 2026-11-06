@@ -1,0 +1,13 @@
+# Accent per mode; everything else follows the viewer's light/dark setting.
+# (A plain [theme] section would pin the app to a single light theme.)
+[theme.light]
+primaryColor = "#2a78d6"
+
+[theme.dark]
+primaryColor = "#3987e5"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"
