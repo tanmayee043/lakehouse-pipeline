@@ -14,7 +14,3 @@ Commit a small sample in `tests/data/` (57 KB): 3 cities chosen for their edge c
 
 - CI is offline and deterministic, and tests build throwaway warehouses without touching `data/`.
 - The sample can drift from the real API's shape. If Open-Meteo changes its response, CI won't notice; `dbt build` on the next real run will.
-
-## Update: crypto sample
-
-`tests/data/raw_crypto/` holds Project 1's committed crash-day recording (10,507 real trades) as the official record, plus a copy as Project 1 would store it with known faults planted: a 10-trade and a 1-trade gap, one price off by 0.01, and one anomaly of each type. Tests assert that reconciliation finds exactly those. `tests/data/project1/schema.sql` is a copy of Project 1's schema, loaded into a throwaway Postgres (Testcontainers) to test the read-only extract. See `tests/data/README.md`.

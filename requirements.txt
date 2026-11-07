@@ -21,8 +21,3 @@ streamlit==1.67.0
 altair==6.3.0
 pandas==3.1.1
 pydeck==0.9.3
-
-# Crypto sources: Project 1's Postgres (read-only) and Parquet for the raw layer
-psycopg2-binary==2.9.12
-pyarrow==26.0.1
-pydantic-settings==2.16.2
