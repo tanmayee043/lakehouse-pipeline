@@ -1,9 +1,9 @@
-"""Reading Project 1's database: a throwaway Postgres (Testcontainers) with Project 1's real schema.
+"""Reading the Crypto project's database: a throwaway Postgres (Testcontainers) with the Crypto project's real schema.
 
 Needs Docker. The data is small and hand-made so every expected value is obvious:
     BTCUSDT 1-5 late on 10 Oct, 8-9 just after midnight -> open gap 6-7 spans both days
     ETHUSDT 10, 12 on 10 Oct                             -> open gap 11
-    SOLUSDT gap 20-21, already resolved by Project 1    -> not reported as open
+    SOLUSDT gap 20-21, already resolved by the Crypto project    -> not reported as open
 """
 
 from collections.abc import Iterator
@@ -17,12 +17,12 @@ import pyarrow.parquet as pq
 import pytest
 from testcontainers.community.postgres import PostgresContainer
 
-from ingestion.crypto.settings import Project1PostgresSettings
+from ingestion.crypto.settings import CryptoProjectPostgresSettings
 from ingestion.crypto.stream_extract import connect_read_only, extract_day, open_gap_days
 
 pytestmark = pytest.mark.integration
 
-SCHEMA = Path(__file__).resolve().parent / "data" / "project1" / "schema.sql"
+SCHEMA = Path(__file__).resolve().parent / "data" / "crypto_project" / "schema.sql"
 MIDNIGHT = datetime(2025, 10, 11, tzinfo=timezone.utc)
 
 TRADES = [
@@ -42,9 +42,9 @@ GAPS = [
 
 
 @pytest.fixture(scope="module")
-def project1() -> Iterator[Project1PostgresSettings]:
+def crypto_project_db() -> Iterator[CryptoProjectPostgresSettings]:
     with PostgresContainer("postgres:16.15", username="crypto", password="test", dbname="crypto_db") as pg:
-        settings = Project1PostgresSettings(
+        settings = CryptoProjectPostgresSettings(
             host=pg.get_container_host_ip(),
             port=int(pg.get_exposed_port(5432)),
             db="crypto_db",
@@ -66,8 +66,10 @@ def project1() -> Iterator[Project1PostgresSettings]:
         yield settings
 
 
-def test_extract_copies_only_that_utc_day_with_exact_prices(project1: Project1PostgresSettings, tmp_path: Path) -> None:
-    conn = connect_read_only(project1)
+def test_extract_copies_only_that_utc_day_with_exact_prices(
+    crypto_project_db: CryptoProjectPostgresSettings, tmp_path: Path
+) -> None:
+    conn = connect_read_only(crypto_project_db)
     try:
         counts = extract_day(conn, date(2025, 10, 10), tmp_path)
     finally:
@@ -82,9 +84,9 @@ def test_extract_copies_only_that_utc_day_with_exact_prices(project1: Project1Po
 
 
 def test_a_day_with_nothing_captured_still_writes_an_empty_file(
-    project1: Project1PostgresSettings, tmp_path: Path
+    crypto_project_db: CryptoProjectPostgresSettings, tmp_path: Path
 ) -> None:
-    conn = connect_read_only(project1)
+    conn = connect_read_only(crypto_project_db)
     try:
         extract_day(conn, date(2025, 10, 1), tmp_path)
     finally:
@@ -92,8 +94,8 @@ def test_a_day_with_nothing_captured_still_writes_an_empty_file(
     assert pq.read_table(tmp_path / "stream_trades" / "trade_date=2025-10-01" / "trades.parquet").num_rows == 0
 
 
-def test_the_connection_cannot_change_project1(project1: Project1PostgresSettings) -> None:
-    conn = connect_read_only(project1)
+def test_the_connection_cannot_change_the_crypto_project(crypto_project_db: CryptoProjectPostgresSettings) -> None:
+    conn = connect_read_only(crypto_project_db)
     try:
         with pytest.raises(psycopg2.errors.ReadOnlySqlTransaction), conn.cursor() as cur:
             cur.execute("DELETE FROM trade_gaps")
@@ -101,8 +103,10 @@ def test_the_connection_cannot_change_project1(project1: Project1PostgresSetting
         conn.close()
 
 
-def test_open_gaps_map_to_their_days_including_across_midnight(project1: Project1PostgresSettings) -> None:
-    conn = connect_read_only(project1)
+def test_open_gaps_map_to_their_days_including_across_midnight(
+    crypto_project_db: CryptoProjectPostgresSettings,
+) -> None:
+    conn = connect_read_only(crypto_project_db)
     try:
         days = open_gap_days(conn)
     finally:

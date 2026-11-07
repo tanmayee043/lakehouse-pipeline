@@ -1,4 +1,4 @@
-"""Raw crypto assets: the exchange's official record, and Project 1's live capture (read-only)."""
+"""Raw crypto assets: the exchange's official record, and the Crypto project's live capture (read-only)."""
 
 from collections.abc import Iterator
 
@@ -52,29 +52,29 @@ def exchange_trades(context: AssetExecutionContext) -> MaterializeResult:
 
 @multi_asset(
     specs=[
-        AssetSpec(STREAM_TRADES, description="Trades Project 1 captured live, copied one UTC day at a time."),
-        AssetSpec(STREAM_EXTRACTS, description="Which days were copied from Project 1 (one file per day)."),
-        AssetSpec(TRADE_GAPS, description="Snapshot of Project 1's trade_gaps table."),
+        AssetSpec(STREAM_TRADES, description="Trades the Crypto project captured live, copied one UTC day at a time."),
+        AssetSpec(STREAM_EXTRACTS, description="Which days were copied from the Crypto project (one file per day)."),
+        AssetSpec(TRADE_GAPS, description="Snapshot of the Crypto project's trade_gaps table."),
     ],
     group_name="crypto_ingestion",
     partitions_def=crypto_partitions,
     backfill_policy=BackfillPolicy.single_run(),
 )
-def project1_stream(context: AssetExecutionContext) -> Iterator[MaterializeResult]:
-    """Copy Project 1's captured trades and gap list. Read-only: Project 1 is never changed.
+def crypto_project_stream(context: AssetExecutionContext) -> Iterator[MaterializeResult]:
+    """Copy the Crypto project's captured trades and gap list. Read-only: the Crypto project is never changed.
 
-    If Project 1's database isn't running, nothing is written and the run carries on, so the
+    If the Crypto project's database isn't running, nothing is written and the run carries on, so the
     official record and analytics still build. Reconciliation then shows those days as
-    `stream_not_extracted`; re-run the partition once Project 1 is back (it keeps 90 days).
+    `stream_not_extracted`; re-run the partition once the Crypto project is back (it keeps 90 days).
     """
     settings = CryptoSettings()  # type: ignore[call-arg]
     days = days_in(*partition_days(context))
     try:
         conn = connect_read_only()
     except psycopg2.OperationalError as e:
-        context.log.warning(f"Project 1's database isn't reachable, so no stream data was copied: {e}")
+        context.log.warning(f"The Crypto project's database isn't reachable, so no stream data was copied: {e}")
         for key in (STREAM_TRADES, STREAM_EXTRACTS, TRADE_GAPS):
-            yield MaterializeResult(asset_key=key, metadata={"project1_reachable": False, "days": len(days)})
+            yield MaterializeResult(asset_key=key, metadata={"crypto_project_reachable": False, "days": len(days)})
         return
 
     captured = gaps = 0
@@ -85,6 +85,8 @@ def project1_stream(context: AssetExecutionContext) -> Iterator[MaterializeResul
             gaps = counts["gaps"]
     finally:
         conn.close()
-    yield MaterializeResult(asset_key=STREAM_TRADES, metadata={"project1_reachable": True, "captured_trades": captured})
+    yield MaterializeResult(
+        asset_key=STREAM_TRADES, metadata={"crypto_project_reachable": True, "captured_trades": captured}
+    )
     yield MaterializeResult(asset_key=STREAM_EXTRACTS, metadata={"days_copied": len(days)})
-    yield MaterializeResult(asset_key=TRADE_GAPS, metadata={"gaps_in_project1": gaps})
+    yield MaterializeResult(asset_key=TRADE_GAPS, metadata={"gaps_in_crypto_project": gaps})

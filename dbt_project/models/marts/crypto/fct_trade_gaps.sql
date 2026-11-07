@@ -1,5 +1,5 @@
--- Project 1's reported gaps, and whether the lakehouse has filled each one from the
--- exchange's record. The lakehouse never writes back, so Project 1 still lists them as open.
+-- The Crypto project's reported gaps, and whether the lakehouse has filled each one from the
+-- exchange's record. The lakehouse never writes back, so the Crypto project still lists them as open.
 --
 -- A gap can span midnight, so it may be only partly filled until the next day's record is in.
 -- Once the record has the trades on both sides of the gap, sequential IDs mean every missing
@@ -51,7 +51,7 @@ select
         else 'awaiting_official_record'
     end as fill_status,
     g.detected_at_utc,
-    g.resolved_in_project1_at_utc
+    g.resolved_in_crypto_project_at_utc
 from gaps as g
 join filled as f using (symbol, first_missing_id)
 join covered as c using (symbol, first_missing_id)

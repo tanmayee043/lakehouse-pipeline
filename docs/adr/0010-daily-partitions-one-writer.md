@@ -12,7 +12,7 @@ Unlike forecasts, trade history can be fetched for any past day, so crypto data 
 - A backfill over many days runs as one run (`BackfillPolicy.single_run`); dbt gets the range as `crypto_start_date`/`crypto_end_date`.
 - `fct_trades` and `fct_reconciliation_daily` are incremental: a run deletes and re-inserts whole days, so reruns are idempotent and other days are untouched.
 - `dagster.yaml` limits the instance to one run at a time, and dbt steps share a one-slot pool.
-- A sensor re-runs a day when Project 1 reports a new gap on it.
+- A sensor re-runs a day when the Crypto project reports a new gap on it.
 
 ## Consequences
 

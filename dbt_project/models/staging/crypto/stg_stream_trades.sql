@@ -1,4 +1,4 @@
--- Project 1 stores the exchange's uppercase symbols; upper() guards the join against any hand-entered row.
+-- The Crypto project stores the exchange's uppercase symbols; upper() guards the join against any hand-entered row.
 select
     upper(symbol) as symbol,
     trade_id,

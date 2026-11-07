@@ -4,14 +4,14 @@
 
 A batch data pipeline that lands raw data from APIs and databases, turns it into tested analytics tables, and runs on a schedule, built with the same layering, testing and orchestration patterns used on production data platforms.
 
-It answers one question for crypto trades: **do the live stream and the official history agree?** [Project 1](https://github.com/tanmayee043/crypto-streaming-platform) captures Binance.US trades live. This pipeline downloads the exchange's official record of every trade, reconciles the two trade by trade, and fills whatever the live capture missed.
+It answers one question for crypto trades: **do the live stream and the official history agree?** The [Crypto project](https://github.com/tanmayee043/crypto-streaming-platform) captures Binance.US trades live. This pipeline downloads the exchange's official record of every trade, reconciles the two trade by trade, and fills whatever the live capture missed.
 
 | Source | What | How it arrives |
 |---|---|---|
-| **Crypto** | Every BTC, ETH, SOL and XRP trade on Binance.US (about 49,000 a day), plus Project 1's live capture and the gaps it reported | Daily, partitioned by UTC day; backfillable; Project 1 is read-only |
+| **Crypto** | Every BTC, ETH, SOL and XRP trade on Binance.US (about 49,000 a day), plus the Crypto project's live capture and the gaps it reported | Daily, partitioned by UTC day; backfillable; the Crypto project is read-only |
 | **Weather** | 7-day hourly forecasts for 79 world cities from [Open-Meteo](https://open-meteo.com/) | Daily |
 
-**Result on the real data so far** (4 days, 114,872 official trades): Project 1 lost **0 trades while it was running** (100% completeness), **0 of its 2,945 captured trades disagree** with the exchange, and the **22,423 trades from its downtime** were filled from the official record.
+**Result on the real data so far** (4 days, 114,872 official trades): the Crypto project lost **0 trades while it was running** (100% completeness), **0 of its 2,945 captured trades disagree** with the exchange, and the **22,423 trades from its downtime** were filled from the official record.
 
 | Crypto reconciliation | Crypto market |
 |---|---|
@@ -26,7 +26,7 @@ It answers one question for crypto trades: **do the live stream and the official
 ```mermaid
 flowchart LR
     BX[Binance.US<br/>trade history API] --> XH[Exchange history<br/>Python + Pydantic]
-    P1[(Project 1 Postgres<br/>trades, trade_gaps)] -- read-only --> SX[Stream extract]
+    P1[(Crypto project Postgres<br/>trades, trade_gaps)] -- read-only --> SX[Stream extract]
     XH --> RC[(Raw Parquet<br/>one folder per UTC day)]
     SX --> RC
     RC --> CMP[int_trades_compared<br/>match on symbol + trade ID]
@@ -46,7 +46,7 @@ flowchart LR
 |---|---|---|
 | **Raw** | `data/raw_crypto/<source>/trade_date=YYYY-MM-DD/*.parquet`, money as `DECIMAL(20,8)`, never edited | `data/raw_json/fetched_on=YYYY-MM-DD/<city>.json`, never edited |
 | **Staging** | Ephemeral (inlined): typed, symbols normalised, only the days being run are read | `stg_cities`, `stg_weather_hourly`: unnested, local time to UTC with DST handled |
-| **Intermediate** | `int_trades_compared`: full outer join of the official record and Project 1's capture | `int_weather_latest`: newest forecast per city and hour |
+| **Intermediate** | `int_trades_compared`: full outer join of the official record and the Crypto project's capture | `int_weather_latest`: newest forecast per city and hour |
 | **Marts** | `fct_trades`, `fct_reconciliation_daily`, `fct_ohlcv_daily`, `fct_anomalies_daily`, `fct_trade_gaps` | `dim_city`, `fct_weather_hourly`, `fct_weather_daily` |
 
 Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`. Every mart has an enforced dbt contract.
@@ -60,12 +60,12 @@ Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`. Ever
 | The official record is complete | Binance.US trade IDs are sequential per symbol; a test fails if a day's record has any break in its ID range | Real downloads: e.g. XRPUSDT on 5 Nov, 8,663 trades = last ID − first ID + 1 |
 | Every trade appears once | `fct_trades` is keyed on symbol + trade ID (uniqueness test plus contract) | Test on sample data: 10,507 official trades in, 10,507 rows out |
 | Reconciliation finds real faults and nothing else | Full outer join on symbol + trade ID; exact decimal comparison of price and quantity | Sample data with planted faults (10-trade and 1-trade losses, a 10-minute outage, a price off by 0.01): tests assert exactly those are found |
-| Downtime isn't counted as data loss | Captured trades are split into sessions (a new one after 5 minutes with nothing captured); completeness counts losses inside sessions only | First live run read 11.6% under the old rule; Project 1 had simply been switched off for hours. Now 100%, with downtime reported separately ([ADR 9](docs/adr/0009-reconcile-by-trade-id-in-the-capture-window.md)) |
-| Project 1's gaps get filled | `fct_trade_gaps` checks every reported gap against `fct_trades`; a test fails if a gap is still open once the record covers both sides of it | Real data: 8 of 8 gaps filled (22,423 trades), including one spanning midnight |
+| Downtime isn't counted as data loss | Captured trades are split into sessions (a new one after 5 minutes with nothing captured); completeness counts losses inside sessions only | First live run read 11.6% under the old rule; the Crypto project had simply been switched off for hours. Now 100%, with downtime reported separately ([ADR 9](docs/adr/0009-reconcile-by-trade-id-in-the-capture-window.md)) |
+| The Crypto project's gaps get filled | `fct_trade_gaps` checks every reported gap against `fct_trades`; a test fails if a gap is still open once the record covers both sides of it | Real data: 8 of 8 gaps filled (22,423 trades), including one spanning midnight |
 | Money is never a float | `DECIMAL(20,8)` from the API response to the marts; Pydantic rejects non-positive prices | Test recomputes every daily candle (open, high, low, close, volume) in Python `Decimal` from the raw files and compares |
 | Re-running a day changes nothing | Incremental models replace whole days (`delete+insert` on `trade_date`) | Test: running a partition twice leaves every crypto mart's checksum unchanged |
 | A partition run only touches its own days | The run's date window filters both the raw reads and the replaced rows | Test: delete one day's raw files, rebuild another day, and the first day's rows are still there |
-| Project 1 is never changed | The connection is opened `READ ONLY` ([ADR 8](docs/adr/0008-read-project1-never-write.md)) | Test against a real Postgres with Project 1's schema (Testcontainers): a `DELETE` is refused |
+| The Crypto project is never changed | The connection is opened `READ ONLY` ([ADR 8](docs/adr/0008-read-crypto-project-never-write.md)) | Test against a real Postgres with the Crypto project's schema (Testcontainers): a `DELETE` is refused |
 
 ### Weather
 
@@ -81,7 +81,7 @@ Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`. Ever
 
 Measured on a laptop (i5-1135G7, 12 GB RAM):
 
-- **Crypto:** about 49,000 official trades a day for 4 symbols; one daily partition (download, Project 1 extract, dbt build) takes **2–4 minutes**, mostly the deliberate pause between API pages
+- **Crypto:** about 49,000 official trades a day for 4 symbols; one daily partition (download, Crypto project extract, dbt build) takes **2–4 minutes**, mostly the deliberate pause between API pages
 - **Weather:** 79 cities × 168 hours = 13,272 hourly rows a day; a full run takes about 2 min 20 s
 - **`dbt build`:** 16 models (11 tables, 5 inlined) and 44 data tests, plus contracts on every mart
 - **Test suite:** 36 pytest tests (unit, integration, Testcontainers and smoke) in about 3½ minutes; CI runs it on every push
@@ -90,11 +90,11 @@ Measured on a laptop (i5-1135G7, 12 GB RAM):
 
 Each has a longer write-up in [docs/adr](docs/adr/README.md).
 
-- **Read Project 1, never write to it.** A one-way boundary: Project 1 produces, the lakehouse consumes. Recovered trades live only in the lakehouse.
+- **Read the Crypto project, never write to it.** A one-way boundary: the Crypto project produces, the lakehouse consumes. Recovered trades live only in the lakehouse.
 - **Reconcile by trade ID inside capture sessions.** Sequential IDs make the official record complete by construction, and sessions keep downtime from looking like data loss.
 - **Daily partitions, one run at a time.** Trade history can be backfilled, so crypto assets are partitioned by UTC day. A backfill runs as one run, and the instance runs one job at a time because DuckDB has a single writer.
 - **Parquet raw layer with exact decimals.** Money stays `DECIMAL(20,8)` end to end. Iceberg can be added over these files later.
-- **A sensor backfills reported gaps.** When Project 1 records a new gap, the affected day is re-run once.
+- **A sensor backfills reported gaps.** When the Crypto project records a new gap, the affected day is re-run once.
 - **DuckDB as the warehouse.** No server, free, reads JSON, CSV and Parquet directly.
 - **Local time plus IANA zone for weather.** Daily summaries follow each city's own calendar day.
 - **Dagster with dagster-dbt.** Each dbt model is an asset and each test an asset check, so lineage and test results show in one UI. Schedules and the sensor ship switched off.
@@ -119,17 +119,17 @@ pip install -r requirements.txt
 
 If activation fails with "running scripts is disabled", run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or call tools directly, for example `venv\Scripts\dbt.exe`.
 
-**Crypto: connect to Project 1.** Start Project 1's database (in its folder: `docker compose up -d postgres`), then create a `.env` file here (it's gitignored) with its connection details:
+**Crypto: connect to the Crypto project.** Start the Crypto project's database (in its folder: `docker compose up -d postgres`), then create a `.env` file here (it's gitignored) with its connection details:
 
 ```
-PROJECT1_POSTGRES_HOST=localhost
-PROJECT1_POSTGRES_PORT=5432
-PROJECT1_POSTGRES_DB=crypto_db
-PROJECT1_POSTGRES_USER=crypto
-PROJECT1_POSTGRES_PASSWORD=<Project 1's POSTGRES_PASSWORD>
+CRYPTO_PROJECT_POSTGRES_HOST=localhost
+CRYPTO_PROJECT_POSTGRES_PORT=5432
+CRYPTO_PROJECT_POSTGRES_DB=crypto_db
+CRYPTO_PROJECT_POSTGRES_USER=crypto
+CRYPTO_PROJECT_POSTGRES_PASSWORD=<the Crypto project's POSTGRES_PASSWORD>
 ```
 
-Optional settings: `CRYPTO_SYMBOLS` (default `BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT`) and `CRYPTO_START_DATE` (first partition, default `2026-09-01`). Without Project 1 the official record and analytics still build; reconciliation shows those days as "Not copied yet".
+Optional settings: `CRYPTO_SYMBOLS` (default `BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT`) and `CRYPTO_START_DATE` (first partition, default `2026-09-01`). Without the Crypto project, the official record and analytics still build; reconciliation shows those days as "Not copied yet".
 
 **Run it through Dagster**
 
@@ -141,7 +141,7 @@ dagster dev
 Open http://localhost:3000:
 - **Jobs → daily_crypto_pipeline → Materialize**: pick a UTC day, or a range to backfill.
 - **Jobs → daily_weather_pipeline → Materialize all**.
-- **Automation**: switch on the daily schedules (crypto 02:15 UTC for yesterday, weather 06:00 UTC) and `project1_gap_sensor`. They only fire while `dagster dev` is running.
+- **Automation**: switch on the daily schedules (crypto 02:15 UTC for yesterday, weather 06:00 UTC) and `crypto_project_gap_sensor`. They only fire while `dagster dev` is running.
 
 **Or step by step**
 
@@ -164,7 +164,7 @@ streamlit run dashboard/app.py
 
 Open http://localhost:8501. The sidebar switches between Weather and Crypto.
 
-How to handle failures (API outage, Project 1 unreachable, locked warehouse, stale data, a failing test) is in the [runbook](docs/runbook.md).
+How to handle failures (API outage, Crypto project unreachable, locked warehouse, stale data, a failing test) is in the [runbook](docs/runbook.md).
 
 ## Development
 
@@ -176,13 +176,13 @@ mypy .
 pytest
 ```
 
-Tests never touch `data/` or a live API. Integration tests build throwaway warehouses from the sample data in `tests/data/` (described in [its README](tests/data/README.md)), and the Project 1 tests start a throwaway Postgres with Project 1's schema through Testcontainers, so they need Docker. CI runs the same checks, plus `dbt build` on the sample data, on every push and pull request.
+Tests never touch `data/` or a live API. Integration tests build throwaway warehouses from the sample data in `tests/data/` (described in [its README](tests/data/README.md)), and the Crypto project tests start a throwaway Postgres with the Crypto project's schema through Testcontainers, so they need Docker. CI runs the same checks, plus `dbt build` on the sample data, on every push and pull request.
 
 ## Project layout
 
 ```
 ingestion/fetch_weather.py         Open-Meteo -> data/raw_json/
-ingestion/crypto/                  Binance.US history and Project 1 extract -> data/raw_crypto/ (Parquet)
+ingestion/crypto/                  Binance.US history and Crypto project extract -> data/raw_crypto/ (Parquet)
 data/raw_csv/cities.csv            The 79 tracked cities
 dbt_project/                       dbt-duckdb project
   models/{staging,intermediate,marts}/weather/
@@ -201,4 +201,4 @@ docs/runbook.md                    What to do when something breaks
 
 - Apache Iceberg tables over the raw Parquet (schema evolution, time travel), then S3, Glue and Athena with a `dbt-athena` prod target.
 - Incremental `fct_ohlcv_daily` and `fct_anomalies_daily`.
-- Optional write-back of filled trades to Project 1 (see [ADR 8](docs/adr/0008-read-project1-never-write.md)).
+- Optional write-back of filled trades to the Crypto project (see [ADR 8](docs/adr/0008-read-crypto-project-never-write.md)).

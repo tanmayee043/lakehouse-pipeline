@@ -1,4 +1,4 @@
-"""Backfill automatically when Project 1 reports a gap."""
+"""Backfill automatically when the Crypto project reports a gap."""
 
 import hashlib
 from collections.abc import Iterator
@@ -27,13 +27,13 @@ def build_gap_sensor(job: Any) -> SensorDefinition:
         minimum_interval_seconds=15 * 60,
         # Off until switched on in the UI, like the schedules.
         default_status=DefaultSensorStatus.STOPPED,
-        description="Re-runs a day's crypto partition when Project 1 reports an open gap on it.",
+        description="Re-runs a day's crypto partition when the Crypto project reports an open gap on it.",
     )
-    def project1_gap_sensor(context: SensorEvaluationContext) -> Iterator[RunRequest | SkipReason]:
+    def crypto_project_gap_sensor(context: SensorEvaluationContext) -> Iterator[RunRequest | SkipReason]:
         try:
             conn = connect_read_only()
         except psycopg2.OperationalError:
-            yield SkipReason("Project 1's database isn't reachable")
+            yield SkipReason("The Crypto project's database isn't reachable")
             return
         try:
             gap_days = open_gap_days(conn)
@@ -54,4 +54,4 @@ def build_gap_sensor(job: Any) -> SensorDefinition:
         if not requested:
             yield SkipReason("No open gaps on completed days")
 
-    return project1_gap_sensor
+    return crypto_project_gap_sensor

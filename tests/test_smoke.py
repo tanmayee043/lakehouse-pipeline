@@ -39,7 +39,7 @@ def test_crypto_lineage_runs_from_both_sources_into_reconciliation(warehouse: Wa
     }
     assert reconciliation.partitions_def is not None  # daily partitions
     assert graph.get(AssetKey(["raw", "weather_forecasts"])).partitions_def is None  # weather stays unpartitioned
-    assert [s.name for s in defs.sensors or ()] == ["project1_gap_sensor"]
+    assert [s.name for s in defs.sensors or ()] == ["crypto_project_gap_sensor"]
 
 
 def run_dashboard(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:

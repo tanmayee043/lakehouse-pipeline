@@ -13,7 +13,7 @@ clean-targets: ["target", "dbt_packages"]
 vars:
   crypto_start_date: null
   crypto_end_date: null
-  # Project 1 counts as switched off after this long with no captured trades (see fct_reconciliation_daily).
+  # The Crypto project counts as switched off after this long with no captured trades (see fct_reconciliation_daily).
   capture_session_break_minutes: 5
 
 # Everything is a table: staging reads files by relative path, so views would only

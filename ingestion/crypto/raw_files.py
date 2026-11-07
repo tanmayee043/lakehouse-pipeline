@@ -6,10 +6,10 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-MONEY = pa.decimal128(20, 8)  # same as Project 1's NUMERIC(20, 8)
+MONEY = pa.decimal128(20, 8)  # same as the Crypto project's NUMERIC(20, 8)
 UTC_TIME = pa.timestamp("us", tz="UTC")
 
-# Trades as Project 1 stored them, including its live anomaly scores.
+# Trades as the Crypto project stored them, including its live anomaly scores.
 STREAM_TRADES = pa.schema(
     [
         ("symbol", pa.string()),
@@ -26,7 +26,7 @@ STREAM_TRADES = pa.schema(
     ]
 )
 
-# Project 1's trade_gaps table: missing trade-ID ranges its gap checker found.
+# The Crypto project's trade_gaps table: missing trade-ID ranges its gap checker found.
 TRADE_GAPS = pa.schema(
     [
         ("symbol", pa.string()),

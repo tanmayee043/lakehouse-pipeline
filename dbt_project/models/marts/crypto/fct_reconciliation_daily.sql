@@ -6,9 +6,9 @@
         on_schema_change='fail'
     )
 }}
--- Per symbol and UTC day: did Project 1's live capture agree with the exchange's record?
+-- Per symbol and UTC day: did the Crypto project's live capture agree with the exchange's record?
 --
--- Project 1 runs in sessions, often with hours switched off in between. A new capture session
+-- The Crypto project runs in sessions, often with hours switched off in between. A new capture session
 -- starts when it captured nothing for more than `capture_session_break_minutes`. Missing trades
 -- inside a session were lost while running (that's what completeness_pct measures); missing
 -- trades between sessions happened while it was switched off. Both are filled from the record.

@@ -1,4 +1,4 @@
-"""Crypto page: does Project 1's live capture agree with the exchange's official record?"""
+"""Crypto page: does the Crypto project's live capture agree with the exchange's official record?"""
 
 import altair as alt
 import pandas as pd
@@ -27,9 +27,9 @@ GAP_STATUS_LABELS = {
     "awaiting_official_record": "⏳ Waiting for that day's record",
 }
 STATUS_HELP = (
-    "Complete: every trade matched. Gaps filled: Project 1 lost trades while running. Downtime filled: "
+    "Complete: every trade matched. Gaps filled: the Crypto project lost trades while running. Downtime filled: "
     "it was switched off for part of the day. Both are filled from the official record. Disagrees: a "
-    "captured price or quantity differs from the record. Not captured: Project 1 didn't run that day."
+    "captured price or quantity differs from the record. Not captured: the Crypto project didn't run that day."
 )
 
 
@@ -145,7 +145,7 @@ def anomaly_chart(df: pd.DataFrame) -> alt.Chart:
                 alt.Tooltip("count:Q", title="Anomalies"),
             ],
         )
-        .properties(title="Anomalies Project 1 flagged live", height=200)
+        .properties(title="Anomalies the Crypto project flagged live", height=200)
     )
 
 
@@ -153,8 +153,8 @@ def anomaly_chart(df: pd.DataFrame) -> alt.Chart:
 
 st.title("Crypto")
 st.caption(
-    "Project 1's live capture of Binance.US trades, checked against the exchange's official record. "
-    "Days are UTC; the lakehouse only reads Project 1, never changes it."
+    "The Crypto project's live capture of Binance.US trades, checked against the exchange's official record. "
+    "Days are UTC; the lakehouse only reads the Crypto project, never changes it."
 )
 
 try:
@@ -181,18 +181,18 @@ with recon_tab:
     k1.metric(
         "Completeness",
         f"{completeness:.2%}" if completeness is not None else "—",
-        help="Share of official trades Project 1 captured while it was running (inside its capture sessions).",
+        help="Share of official trades the Crypto project captured while it was running (inside its capture sessions).",
     )
     k2.metric(
         "Lost while running",
         f"{'⚠️ ' if lost else '✅ '}{lost:,}",
-        help="Trades Project 1 missed inside a capture session: real capture losses. Filled from the record.",
+        help="Trades the Crypto project missed inside a capture session: real capture losses. Filled from the record.",
     )
     k4, k5, _ = st.columns(3)
     k4.metric(
         "Downtime filled",
         f"{int(captured['missed_during_downtime'].sum()):,}",
-        help="Trades from stretches when Project 1 was switched off (no capture for over 5 minutes), "
+        help="Trades from stretches when the Crypto project was switched off (no capture for over 5 minutes), "
         "filled from the official record.",
     )
     k3.metric(
@@ -229,10 +229,12 @@ with recon_tab:
             "symbol": "Symbol",
             "status": st.column_config.TextColumn("Status", help=STATUS_HELP),
             "completeness_pct": st.column_config.TextColumn(
-                "Completeness", help="Inside Project 1's capture sessions that day; — when it didn't run"
+                "Completeness", help="Inside the Crypto project's capture sessions that day; — when it didn't run"
             ),
             "day_coverage_pct": st.column_config.NumberColumn(
-                "Day coverage", format="%.1f%%", help="Over the whole UTC day (low when Project 1 wasn't running)"
+                "Day coverage",
+                format="%.1f%%",
+                help="Over the whole UTC day (low when the Crypto project wasn't running)",
             ),
             "official_trades": st.column_config.NumberColumn("Official", format="%d"),
             "captured_trades": st.column_config.NumberColumn("Captured", format="%d"),
@@ -269,7 +271,9 @@ with market_tab:
     if df["captured_trades"].notna().any():
         right.altair_chart(anomaly_chart(df[df["captured_trades"].notna()]), width="stretch")
     else:
-        right.info("Project 1 didn't capture this symbol on any of these days, so there are no live anomaly flags.")
+        right.info(
+            "The Crypto project didn't capture this symbol on any of these days, so there are no live anomaly flags."
+        )
 
 # ----- Gaps -----
 with gaps_tab:
@@ -278,17 +282,19 @@ with gaps_tab:
     except queries.WarehouseUnavailable as e:
         no_crypto_data(e)
     if gap_df.empty:
-        st.success("Project 1 hasn't reported any gaps.", icon="✅")
+        st.success("The Crypto project hasn't reported any gaps.", icon="✅")
     else:
         filled = int(gap_df["filled_by_lakehouse"].sum())
         st.caption(
-            f"{filled} of {len(gap_df)} gaps filled from the official record. Project 1 still lists them as open: "
-            "the lakehouse reads Project 1 but never writes back."
+            f"{filled} of {len(gap_df)} gaps filled from the official record. "
+            "The Crypto project still lists them as open: the lakehouse reads it but never writes back."
         )
         st.dataframe(
             gap_df.assign(
                 lakehouse=gap_df["fill_status"].map(GAP_STATUS_LABELS).fillna(gap_df["fill_status"]),
-                project1=["Resolved" if pd.notna(r) else "Open" for r in gap_df["resolved_in_project1_at_utc"]],
+                crypto_project=[
+                    "Resolved" if pd.notna(r) else "Open" for r in gap_df["resolved_in_crypto_project_at_utc"]
+                ],
             )[
                 [
                     "symbol",
@@ -297,7 +303,7 @@ with gaps_tab:
                     "last_missing_id",
                     "missing_count",
                     "lakehouse",
-                    "project1",
+                    "crypto_project",
                 ]
             ],
             hide_index=True,
@@ -309,6 +315,6 @@ with gaps_tab:
                 "last_missing_id": st.column_config.NumberColumn("Last missing ID", format="%d"),
                 "missing_count": st.column_config.NumberColumn("Trades", format="%d"),
                 "lakehouse": "Lakehouse",
-                "project1": "In Project 1",
+                "crypto_project": "Crypto project",
             },
         )

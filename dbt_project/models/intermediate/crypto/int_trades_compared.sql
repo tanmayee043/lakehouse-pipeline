@@ -1,5 +1,5 @@
 -- Every trade from either side, matched on (symbol, trade_id): the official record vs what
--- Project 1 captured live. Trade IDs are sequential per symbol, so this join is exact.
+-- The Crypto project captured live. Trade IDs are sequential per symbol, so this join is exact.
 with official as (
     select * from {{ ref('stg_exchange_trades') }}
     where {{ crypto_window('trade_date') }}

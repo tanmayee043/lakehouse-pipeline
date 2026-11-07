@@ -4,8 +4,8 @@ version: 2
 models:
   - name: fct_trades
     description: >
-      Every official trade exactly once (grain: symbol + trade_id), with Project 1's live anomaly
-      scores where it captured the trade. Trades Project 1 missed come from the exchange's record.
+      Every official trade exactly once (grain: symbol + trade_id), with the Crypto project's live anomaly
+      scores where it captured the trade. Trades the Crypto project missed come from the exchange's record.
     config:
       contract: {enforced: true}
     data_tests:
@@ -45,10 +45,10 @@ models:
         data_type: boolean
       - name: captured_live
         data_type: boolean
-        description: True when Project 1 captured this trade live.
+        description: True when the Crypto project captured this trade live.
       - name: is_anomaly
         data_type: boolean
-        description: Project 1's live flag; null when it didn't capture the trade.
+        description: The Crypto project's live flag; null when it didn't capture the trade.
       - name: anomaly_type
         data_type: varchar
         data_tests:
@@ -62,9 +62,9 @@ models:
 
   - name: fct_reconciliation_daily
     description: >
-      Per symbol and UTC day, Project 1's live capture against the exchange's official record.
-      completeness_pct covers Project 1's capture sessions (trades lost while it was running);
-      day_coverage_pct covers the whole day, so it also reflects how long Project 1 was switched off.
+      Per symbol and UTC day, the Crypto project's live capture against the exchange's official record.
+      completeness_pct covers the Crypto project's capture sessions (trades lost while it was running);
+      day_coverage_pct covers the whole day, so it also reflects how long the Crypto project was switched off.
     config:
       contract: {enforced: true}
     data_tests:
@@ -92,19 +92,19 @@ models:
         data_type: bigint
       - name: official_in_window
         data_type: bigint
-        description: Official trades between Project 1's first and last captured ID that day.
+        description: Official trades between the Crypto project's first and last captured ID that day.
       - name: missed_in_window
         data_type: bigint
-        description: All trades missing between Project 1's first and last captured trade that day.
+        description: All trades missing between the Crypto project's first and last captured trade that day.
       - name: official_in_sessions
         data_type: bigint
-        description: Official trades inside Project 1's capture sessions.
+        description: Official trades inside the Crypto project's capture sessions.
       - name: missed_while_running
         data_type: bigint
         description: Trades lost inside a capture session (a real capture failure), filled from the record.
       - name: missed_during_downtime
         data_type: bigint
-        description: Trades between sessions, while Project 1 was switched off, filled from the record.
+        description: Trades between sessions, while the Crypto project was switched off, filled from the record.
       - name: capture_sessions
         data_type: bigint
         description: Stretches of capture separated by more than capture_session_break_minutes with nothing captured.
@@ -187,7 +187,7 @@ models:
         data_type: bigint
 
   - name: fct_anomalies_daily
-    description: Project 1's live anomaly flags per symbol and day (only days it captured anything).
+    description: The Crypto project's live anomaly flags per symbol and day (only days it captured anything).
     config:
       contract: {enforced: true}
     data_tests:
@@ -222,8 +222,8 @@ models:
 
   - name: fct_trade_gaps
     description: >
-      Project 1's reported gaps and whether the lakehouse filled each from the official record.
-      The lakehouse never writes back, so resolved_in_project1_at_utc stays as Project 1 set it.
+      The Crypto project's reported gaps and whether the lakehouse filled each from the official record.
+      The lakehouse never writes back, so resolved_in_crypto_project_at_utc stays as the Crypto project set it.
     config:
       contract: {enforced: true}
     data_tests:
@@ -260,5 +260,5 @@ models:
                 values: [filled, partly_filled, awaiting_official_record]
       - name: detected_at_utc
         data_type: timestamp
-      - name: resolved_in_project1_at_utc
+      - name: resolved_in_crypto_project_at_utc
         data_type: timestamp

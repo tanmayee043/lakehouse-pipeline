@@ -4,7 +4,7 @@ version: 2
 # date column, so filters on trade_date skip the other days' files entirely.
 sources:
   - name: crypto_raw
-    description: Files landed by ingestion/crypto/ from Binance.US and Project 1 (read-only).
+    description: Files landed by ingestion/crypto/ from Binance.US and the Crypto project (read-only).
     tables:
       - name: exchange_trades
         description: The exchange's official record of every trade, one file per symbol per UTC day.
@@ -20,7 +20,7 @@ sources:
             error_after: {count: 60, period: hour}
 
       - name: stream_trades
-        description: Trades Project 1 captured live, copied from its Postgres one UTC day at a time.
+        description: Trades the Crypto project captured live, copied from its Postgres one UTC day at a time.
         meta:
           external_location: >-
             read_parquet('{{ env_var('LAKEHOUSE_DATA_DIR', '../data') }}/raw_crypto/stream_trades/trade_date=*/*.parquet',
@@ -28,14 +28,14 @@ sources:
 
       - name: stream_extracts
         description: >
-          One row per stream file, including empty ones: which days were copied from Project 1
-          at all. Tells "Project 1 captured nothing" apart from "never copied".
+          One row per stream file, including empty ones: which days were copied from the Crypto project
+          at all. Tells "the Crypto project captured nothing" apart from "never copied".
         meta:
           external_location: >-
             glob('{{ env_var('LAKEHOUSE_DATA_DIR', '../data') }}/raw_crypto/stream_trades/trade_date=*/trades.parquet')
 
       - name: trade_gaps
-        description: Snapshots of Project 1's trade_gaps table (missing trade-ID ranges), one per run.
+        description: Snapshots of the Crypto project's trade_gaps table (missing trade-ID ranges), one per run.
         meta:
           external_location: >-
             read_parquet('{{ env_var('LAKEHOUSE_DATA_DIR', '../data') }}/raw_crypto/trade_gaps/snapshot_date=*/*.parquet',

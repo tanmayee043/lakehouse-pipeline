@@ -15,7 +15,7 @@ class CryptoSettings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=ENV_FILE, extra="ignore")
 
-    # Comma-separated, same pairs Project 1 streams by default.
+    # Comma-separated, same pairs the Crypto project streams by default.
     crypto_symbols: str = Field("BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT", min_length=1)
     crypto_raw_dir: Path = PROJECT_ROOT / "data" / "raw_crypto"
     # First UTC day of the daily partitions. Days before it can't be scheduled or backfilled.
@@ -34,13 +34,13 @@ class CryptoSettings(BaseSettings):
         return self.crypto_symbols.split(",")
 
 
-class Project1PostgresSettings(BaseSettings):
-    """PROJECT1_POSTGRES_* variables: Project 1's database, which the lakehouse only reads.
+class CryptoProjectPostgresSettings(BaseSettings):
+    """CRYPTO_PROJECT_POSTGRES_* variables: the Crypto project's database, which the lakehouse only reads.
 
     Read when connecting, so importing a module never needs the database.
     """
 
-    model_config = SettingsConfigDict(env_prefix="PROJECT1_POSTGRES_", env_file=ENV_FILE, extra="ignore")
+    model_config = SettingsConfigDict(env_prefix="CRYPTO_PROJECT_POSTGRES_", env_file=ENV_FILE, extra="ignore")
 
     host: str = "localhost"
     port: int = Field(5432, ge=1, le=65535)
