@@ -1,0 +1,264 @@
+version: 2
+
+# Contracts: the dashboard and anything downstream rely on these shapes, money included.
+models:
+  - name: fct_trades
+    description: >
+      Every official trade exactly once (grain: symbol + trade_id), with Project 1's live anomaly
+      scores where it captured the trade. Trades Project 1 missed come from the exchange's record.
+    config:
+      contract: {enforced: true}
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [symbol, trade_id]
+    columns:
+      - name: symbol
+        data_type: varchar
+        constraints: [{type: not_null}]
+      - name: trade_id
+        data_type: bigint
+        constraints: [{type: not_null}]
+      - name: trade_date
+        data_type: date
+        constraints: [{type: not_null}]
+        description: UTC day of the trade.
+      - name: trade_time_utc
+        data_type: timestamp
+        constraints: [{type: not_null}]
+      - name: price
+        data_type: decimal(20,8)
+        constraints: [{type: not_null}]
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, inclusive: false}
+      - name: quantity
+        data_type: decimal(20,8)
+        constraints: [{type: not_null}]
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, inclusive: false}
+      - name: quote_amount
+        data_type: decimal(38,8)
+        description: Price times quantity, in the quote currency (USDT).
+      - name: is_buyer_maker
+        data_type: boolean
+      - name: captured_live
+        data_type: boolean
+        description: True when Project 1 captured this trade live.
+      - name: is_anomaly
+        data_type: boolean
+        description: Project 1's live flag; null when it didn't capture the trade.
+      - name: anomaly_type
+        data_type: varchar
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [price, volume, both]
+      - name: price_z
+        data_type: double
+      - name: size_ratio
+        data_type: double
+
+  - name: fct_reconciliation_daily
+    description: >
+      Per symbol and UTC day, Project 1's live capture against the exchange's official record.
+      completeness_pct covers Project 1's capture sessions (trades lost while it was running);
+      day_coverage_pct covers the whole day, so it also reflects how long Project 1 was switched off.
+    config:
+      contract: {enforced: true}
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [symbol, trade_date]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >-
+              matched_trades + missed_in_window = official_in_window
+              and missed_while_running + missed_during_downtime = missed_in_window
+              and matched_trades <= captured_trades
+    columns:
+      - name: symbol
+        data_type: varchar
+        constraints: [{type: not_null}]
+      - name: trade_date
+        data_type: date
+        constraints: [{type: not_null}]
+      - name: official_trades
+        data_type: bigint
+      - name: captured_trades
+        data_type: bigint
+      - name: matched_trades
+        data_type: bigint
+      - name: official_in_window
+        data_type: bigint
+        description: Official trades between Project 1's first and last captured ID that day.
+      - name: missed_in_window
+        data_type: bigint
+        description: All trades missing between Project 1's first and last captured trade that day.
+      - name: official_in_sessions
+        data_type: bigint
+        description: Official trades inside Project 1's capture sessions.
+      - name: missed_while_running
+        data_type: bigint
+        description: Trades lost inside a capture session (a real capture failure), filled from the record.
+      - name: missed_during_downtime
+        data_type: bigint
+        description: Trades between sessions, while Project 1 was switched off, filled from the record.
+      - name: capture_sessions
+        data_type: bigint
+        description: Stretches of capture separated by more than capture_session_break_minutes with nothing captured.
+      - name: stream_only_trades
+        data_type: bigint
+        description: Captured trades the exchange has no record of (should always be 0).
+      - name: price_mismatches
+        data_type: bigint
+      - name: quantity_mismatches
+        data_type: bigint
+      - name: first_captured_id
+        data_type: bigint
+      - name: last_captured_id
+        data_type: bigint
+      - name: completeness_pct
+        data_type: double
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 100}
+      - name: day_coverage_pct
+        data_type: double
+        data_tests:
+          - dbt_utils.accepted_range:
+              arguments: {min_value: 0, max_value: 100}
+      - name: stream_extracted
+        data_type: boolean
+      - name: status
+        data_type: varchar
+        constraints: [{type: not_null}]
+        data_tests:
+          - accepted_values:
+              arguments:
+                values:
+                  - complete
+                  - gaps_filled
+                  - downtime_filled
+                  - disagrees
+                  - not_captured
+                  - stream_not_extracted
+                  - awaiting_official_record
+
+  - name: fct_ohlcv_daily
+    description: Daily candles per symbol from the complete official record.
+    config:
+      contract: {enforced: true}
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [symbol, trade_date]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: >-
+              low_price <= least(open_price, close_price, vwap)
+              and high_price >= greatest(open_price, close_price, vwap)
+    columns:
+      - name: symbol
+        data_type: varchar
+        constraints: [{type: not_null}]
+      - name: trade_date
+        data_type: date
+        constraints: [{type: not_null}]
+      - name: open_price
+        data_type: decimal(20,8)
+      - name: high_price
+        data_type: decimal(20,8)
+      - name: low_price
+        data_type: decimal(20,8)
+      - name: close_price
+        data_type: decimal(20,8)
+      - name: volume
+        data_type: decimal(38,8)
+        description: Base-currency volume (for example BTC).
+      - name: quote_volume
+        data_type: decimal(38,8)
+        description: Quote-currency volume (USDT).
+      - name: vwap
+        data_type: decimal(20,8)
+        description: Volume-weighted average price.
+      - name: trade_count
+        data_type: bigint
+
+  - name: fct_anomalies_daily
+    description: Project 1's live anomaly flags per symbol and day (only days it captured anything).
+    config:
+      contract: {enforced: true}
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [symbol, trade_date]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "anomalies = price_anomalies + volume_anomalies + both_anomalies and scored_trades <= captured_trades"
+    columns:
+      - name: symbol
+        data_type: varchar
+        constraints: [{type: not_null}]
+      - name: trade_date
+        data_type: date
+        constraints: [{type: not_null}]
+      - name: captured_trades
+        data_type: bigint
+      - name: scored_trades
+        data_type: bigint
+        description: Captured trades past the detector's warm-up (they have a score).
+      - name: anomalies
+        data_type: bigint
+      - name: price_anomalies
+        data_type: bigint
+      - name: volume_anomalies
+        data_type: bigint
+      - name: both_anomalies
+        data_type: bigint
+      - name: anomaly_rate_pct
+        data_type: double
+
+  - name: fct_trade_gaps
+    description: >
+      Project 1's reported gaps and whether the lakehouse filled each from the official record.
+      The lakehouse never writes back, so resolved_in_project1_at_utc stays as Project 1 set it.
+    config:
+      contract: {enforced: true}
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [symbol, first_missing_id]
+    columns:
+      - name: symbol
+        data_type: varchar
+        constraints: [{type: not_null}]
+      - name: first_missing_id
+        data_type: bigint
+        constraints: [{type: not_null}]
+      - name: last_missing_id
+        data_type: bigint
+      - name: missing_count
+        data_type: bigint
+      - name: trade_date
+        data_type: date
+        description: UTC day of the gap's first missing trade; null until the official record for it is fetched.
+      - name: filled_count
+        data_type: bigint
+      - name: official_record_covers_gap
+        data_type: boolean
+        description: The official record has the trades on both sides of the gap, so the whole gap must be filled.
+      - name: filled_by_lakehouse
+        data_type: boolean
+      - name: fill_status
+        data_type: varchar
+        constraints: [{type: not_null}]
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [filled, partly_filled, awaiting_official_record]
+      - name: detected_at_utc
+        data_type: timestamp
+      - name: resolved_in_project1_at_utc
+        data_type: timestamp
