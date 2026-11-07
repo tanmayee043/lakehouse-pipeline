@@ -2,85 +2,110 @@
 
 [![CI](https://github.com/tanmayee043/lakehouse-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/tanmayee043/lakehouse-pipeline/actions/workflows/ci.yml)
 
-A batch data pipeline that lands raw API data, turns it into tested analytics tables, and runs on a schedule, built with the same layering, testing and orchestration patterns used on production data platforms.
+A batch data pipeline that lands raw data from APIs and databases, turns it into tested analytics tables, and runs on a schedule, built with the same layering, testing and orchestration patterns used on production data platforms.
 
-The first dataset is a **7-day hourly weather forecast for 79 world cities** from [Open-Meteo](https://open-meteo.com/) (free, no API key). Crypto trade history from the [crypto streaming platform](https://github.com/tanmayee043/crypto-streaming-platform) is planned as the second source (see [Roadmap](#roadmap)).
+It answers one question for crypto trades: **do the live stream and the official history agree?** [Project 1](https://github.com/tanmayee043/crypto-streaming-platform) captures Binance.US trades live. This pipeline downloads the exchange's official record of every trade, reconciles the two trade by trade, and fills whatever the live capture missed.
 
-![City forecast page](docs/images/city-forecast.png)
+| Source | What | How it arrives |
+|---|---|---|
+| **Crypto** | Every BTC, ETH, SOL and XRP trade on Binance.US (about 49,000 a day), plus Project 1's live capture and the gaps it reported | Daily, partitioned by UTC day; backfillable; Project 1 is read-only |
+| **Weather** | 7-day hourly forecasts for 79 world cities from [Open-Meteo](https://open-meteo.com/) | Daily |
 
-| Compare cities | Pipeline health |
+**Result on the real data so far** (4 days, 114,872 official trades): Project 1 lost **0 trades while it was running** (100% completeness), **0 of its 2,945 captured trades disagree** with the exchange, and the **22,423 trades from its downtime** were filled from the official record.
+
+| Crypto reconciliation | Crypto market |
 |---|---|
-| ![Compare cities page](docs/images/compare-cities.png) | ![Pipeline health page](docs/images/pipeline-health.png) |
+| ![Reconciliation page](docs/images/crypto-reconciliation.png) | ![Market page](docs/images/crypto-market.png) |
+
+| Weather forecast | Compare cities | Weather pipeline health |
+|---|---|---|
+| ![City forecast page](docs/images/city-forecast.png) | ![Compare cities page](docs/images/compare-cities.png) | ![Pipeline health page](docs/images/pipeline-health.png) |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    API[Open-Meteo API] --> ING
-    CSV[cities.csv<br/>79 cities] --> ING
-    ING[Ingestion<br/>Python] --> RAW[(Raw JSON<br/>one folder per day)]
-    RAW --> STG[Staging<br/>dbt]
-    CSV --> STG
-    STG --> INT[Intermediate<br/>latest forecast per hour]
-    INT --> MARTS[Marts<br/>dim_city · fct_weather_hourly · fct_weather_daily]
-    MARTS --> DASH[Streamlit dashboard]
-    DAG{{Dagster: daily schedule,<br/>retries, lineage}} -.runs.-> ING
-    DAG -.runs.-> STG
+    BX[Binance.US<br/>trade history API] --> XH[Exchange history<br/>Python + Pydantic]
+    P1[(Project 1 Postgres<br/>trades, trade_gaps)] -- read-only --> SX[Stream extract]
+    XH --> RC[(Raw Parquet<br/>one folder per UTC day)]
+    SX --> RC
+    RC --> CMP[int_trades_compared<br/>match on symbol + trade ID]
+    CMP --> FT[fct_trades<br/>incremental]
+    CMP --> REC[fct_reconciliation_daily<br/>incremental]
+    FT --> GOLD[fct_ohlcv_daily · fct_anomalies_daily · fct_trade_gaps]
+    OM[Open-Meteo API] --> WI[Weather ingestion] --> RJ[(Raw JSON)] --> WM[Weather models]
+    REC --> DASH[Streamlit dashboard]
+    GOLD --> DASH
+    WM --> DASH
+    DAG{{Dagster: daily partitions, backfills,<br/>gap sensor, schedules, lineage}} -.runs.-> XH
+    DAG -.runs.-> SX
+    DAG -.runs.-> WI
 ```
 
-| Layer | Where | What happens |
+| Layer | Crypto | Weather |
 |---|---|---|
-| **Raw** | `data/raw_json/fetched_on=YYYY-MM-DD/<city>.json` | Untouched API response plus city metadata and fetch time. Never edited, so every table below can be rebuilt from it. |
-| **Staging** | `stg_cities`, `stg_weather_hourly` | Types cast, hourly arrays unnested to one row per city, per run, per hour. Local time converted to UTC with DST handled. |
-| **Intermediate** | `int_weather_latest` | Consecutive runs overlap by six days; keeps only the newest forecast for each city and hour. |
-| **Marts** | `dim_city`, `fct_weather_hourly`, `fct_weather_daily` | What the dashboard reads. Daily summaries use each city's own local calendar day. |
+| **Raw** | `data/raw_crypto/<source>/trade_date=YYYY-MM-DD/*.parquet`, money as `DECIMAL(20,8)`, never edited | `data/raw_json/fetched_on=YYYY-MM-DD/<city>.json`, never edited |
+| **Staging** | Ephemeral (inlined): typed, symbols normalised, only the days being run are read | `stg_cities`, `stg_weather_hourly`: unnested, local time to UTC with DST handled |
+| **Intermediate** | `int_trades_compared`: full outer join of the official record and Project 1's capture | `int_weather_latest`: newest forecast per city and hour |
+| **Marts** | `fct_trades`, `fct_reconciliation_daily`, `fct_ohlcv_daily`, `fct_anomalies_daily`, `fct_trade_gaps` | `dim_city`, `fct_weather_hourly`, `fct_weather_daily` |
 
-Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`.
+Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`. Every mart has an enforced dbt contract.
 
 ## How the data is kept correct
 
+### Crypto
+
 | Guarantee | How it's enforced | How it was proven |
 |---|---|---|
-| A run never builds on partial data | The ingestion step fails if any city fails to fetch, so dbt doesn't run | Pointed ingestion at a bad URL: failure logged and reported, no partial files left behind (writes go through a temp file) |
-| Re-running a day changes nothing | Same-day runs overwrite the same files; every table is rebuilt from them | Automated test (`test_running_the_whole_pipeline_twice_for_a_day_changes_nothing`): runs the real ingestion and `dbt build` twice for the same day and compares every mart's row count and row checksum. They match; a rerun with values changed by 0.1 °C is detected |
-| Overlapping forecasts don't duplicate rows | `int_weather_latest` keeps the newest run's value for each city and hour | Automated test on sample data where the older run is 1 °C warmer: no older value appears in the overlap. Also checked on real data with a fake +50 °C run: staging held both runs (26,544 rows), the marts only the newest (13,272) |
-| Every city has data | Custom test `assert_every_city_has_forecast` | Removed one city's file: the test and `not_null_dim_city_timezone` both failed |
-| Values are plausible | 27 dbt tests: uniqueness on keys and on each table's grain, relationships, ranges (temperature −90 to 60 °C, wind 0–400 km/h, precipitation ≥ 0), daily min ≤ avg ≤ max | Run on every `dbt build`, locally and in CI; each shows as an asset check in Dagster |
-| The dashboard's tables keep their shape | Enforced dbt contracts on the three marts: column names, types and not-null keys | dbt refuses to build a mart whose columns drift |
-| Data is fresh | `dbt source freshness`: warns after 26 h, errors after 50 h; the dashboard's health tab shows the same status | Passes on the daily data |
-| Time zones are right | Raw data keeps local wall-clock time plus the IANA zone; UTC is derived with DuckDB's DST-aware conversion | Automated test checks the offsets for London (0), Montréal (−5) and Sydney (+11); on real data New York 00:00 local = 05:00 UTC |
-| Transient API errors don't fail the run | HTTP 429/5xx retried with backoff (1, 2, 4, 8 s); the whole step retried twice by Dagster | Not yet exercised against a real outage; 79/79 cities fetched on every run so far |
+| The official record is complete | Binance.US trade IDs are sequential per symbol; a test fails if a day's record has any break in its ID range | Real downloads: e.g. XRPUSDT on 5 Nov, 8,663 trades = last ID − first ID + 1 |
+| Every trade appears once | `fct_trades` is keyed on symbol + trade ID (uniqueness test plus contract) | Test on sample data: 10,507 official trades in, 10,507 rows out |
+| Reconciliation finds real faults and nothing else | Full outer join on symbol + trade ID; exact decimal comparison of price and quantity | Sample data with planted faults (10-trade and 1-trade losses, a 10-minute outage, a price off by 0.01): tests assert exactly those are found |
+| Downtime isn't counted as data loss | Captured trades are split into sessions (a new one after 5 minutes with nothing captured); completeness counts losses inside sessions only | First live run read 11.6% under the old rule; Project 1 had simply been switched off for hours. Now 100%, with downtime reported separately ([ADR 9](docs/adr/0009-reconcile-by-trade-id-in-the-capture-window.md)) |
+| Project 1's gaps get filled | `fct_trade_gaps` checks every reported gap against `fct_trades`; a test fails if a gap is still open once the record covers both sides of it | Real data: 8 of 8 gaps filled (22,423 trades), including one spanning midnight |
+| Money is never a float | `DECIMAL(20,8)` from the API response to the marts; Pydantic rejects non-positive prices | Test recomputes every daily candle (open, high, low, close, volume) in Python `Decimal` from the raw files and compares |
+| Re-running a day changes nothing | Incremental models replace whole days (`delete+insert` on `trade_date`) | Test: running a partition twice leaves every crypto mart's checksum unchanged |
+| A partition run only touches its own days | The run's date window filters both the raw reads and the replaced rows | Test: delete one day's raw files, rebuild another day, and the first day's rows are still there |
+| Project 1 is never changed | The connection is opened `READ ONLY` ([ADR 8](docs/adr/0008-read-project1-never-write.md)) | Test against a real Postgres with Project 1's schema (Testcontainers): a `DELETE` is refused |
 
-The dashboard's **Pipeline health** tab shows freshness (fresh, stale or out of date, each with an icon and a label), city coverage and complete-day percentage.
+### Weather
+
+| Guarantee | How it's enforced | How it was proven |
+|---|---|---|
+| A run never builds on partial data | The ingestion step fails if any city fails to fetch, so dbt doesn't run | Pointed ingestion at a bad URL: failure logged and reported, no partial files left behind |
+| Re-running a day changes nothing | Same-day runs overwrite the same files; tables are rebuilt from them | Test runs the real ingestion and `dbt build` twice for a day and compares every mart's checksum; a 0.1 °C change is detected |
+| Overlapping forecasts don't duplicate rows | `int_weather_latest` keeps the newest run's value per city and hour | Test on sample data where the older run is 1 °C warmer: no older value leaks into the overlap |
+| Time zones are right | Local wall-clock time plus the IANA zone; UTC via DuckDB's DST-aware conversion | Test checks London (0), Montréal (−5), Sydney (+11) |
+| Data is fresh | `dbt source freshness` on both sources; the dashboard shows the same status | Passes on the daily data |
 
 ## Numbers
 
 Measured on a laptop (i5-1135G7, 12 GB RAM):
 
-- **79 cities × 168 hours = 13,272 hourly rows** per daily run, plus 553 daily summary rows
-- **`dbt build`: 6 models + 27 tests in about 7 s**
-- **Test suite: 18 pytest tests (10 unit, 8 integration and smoke) in about 35 s**
-- **Full Dagster run: about 2 min 20 s**, mostly the deliberate 0.5 s pause between API calls
+- **Crypto:** about 49,000 official trades a day for 4 symbols; one daily partition (download, Project 1 extract, dbt build) takes **2–4 minutes**, mostly the deliberate pause between API pages
+- **Weather:** 79 cities × 168 hours = 13,272 hourly rows a day; a full run takes about 2 min 20 s
+- **`dbt build`:** 16 models (11 tables, 5 inlined) and 44 data tests, plus contracts on every mart
+- **Test suite:** 36 pytest tests (unit, integration, Testcontainers and smoke) in about 3½ minutes; CI runs it on every push
 
 ## Design decisions
 
 Each has a longer write-up in [docs/adr](docs/adr/README.md).
 
-- **DuckDB as the warehouse.** No server, free, and it reads JSON and CSV directly. At about 13k rows a day it's far from its limits.
-- **Raw files kept as the source of truth.** Every table can be rebuilt from `data/raw_json/` with one `dbt build`.
-- **All dbt models are tables, not views.** Staging reads files by relative path, so views would only work from inside `dbt_project/`. Tables keep the DuckDB file self-contained, and a full rebuild takes seconds.
-- **Local time plus IANA zone, not GMT.** Daily summaries need each city's own calendar day ("Tuesday in Tokyo" isn't the GMT Tuesday), and a fixed UTC offset would break on DST change days. `is_complete_day` expects 23 or 25 hours on those days.
-- **"Latest forecast wins" dedupe** in its own intermediate model, so the rule is written once and tested.
-- **Dagster with dagster-dbt.** Each dbt model is an asset and each test an asset check, so lineage and test results show in one UI. The schedule ships switched off.
-- **The dashboard reads DuckDB read-only.** It can run alongside the pipeline. If a dbt build is writing at that moment, it shows "busy, try again" instead of an error.
-- **Charts show one measure each, with no dual axes.** Colors come from a colorblind-checked palette, every chart has hover tooltips, and the daily figures are also shown in tables.
+- **Read Project 1, never write to it.** A one-way boundary: Project 1 produces, the lakehouse consumes. Recovered trades live only in the lakehouse.
+- **Reconcile by trade ID inside capture sessions.** Sequential IDs make the official record complete by construction, and sessions keep downtime from looking like data loss.
+- **Daily partitions, one run at a time.** Trade history can be backfilled, so crypto assets are partitioned by UTC day. A backfill runs as one run, and the instance runs one job at a time because DuckDB has a single writer.
+- **Parquet raw layer with exact decimals.** Money stays `DECIMAL(20,8)` end to end. Iceberg can be added over these files later.
+- **A sensor backfills reported gaps.** When Project 1 records a new gap, the affected day is re-run once.
+- **DuckDB as the warehouse.** No server, free, reads JSON, CSV and Parquet directly.
+- **Local time plus IANA zone for weather.** Daily summaries follow each city's own calendar day.
+- **Dagster with dagster-dbt.** Each dbt model is an asset and each test an asset check, so lineage and test results show in one UI. Schedules and the sensor ship switched off.
+- **Charts show one measure each, with no dual axes.** Colors come from a colorblind-checked palette; statuses always pair an icon with a label.
 
 ## What breaks at 10x (and beyond)
 
-- **Full rebuilds.** Every run rebuilds all tables from all raw files. At 10x cities or a year of history, the hourly models should become **incremental** (merge on `city_id` + hour).
-- **One DuckDB file, one writer.** Fine for one pipeline and a few dashboard readers. Many writers or remote users would need object storage plus an open table format (Iceberg) and a query engine such as Athena.
-- **Sequential API calls.** 790 cities at 0.5 s each is about 7 minutes. Batching (Open-Meteo accepts many coordinates per request) or bounded concurrency would fix it.
-- **The scheduler only runs while `dagster dev` is running.** Unattended runs need Dagster deployed as a service, or a scheduled GitHub Actions job.
+- **One DuckDB file, one writer.** Fine for one pipeline and a few dashboard readers. Many writers or remote users need object storage, an open table format (Iceberg) and a query engine such as Athena.
+- **Aggregates rebuild in full.** `fct_ohlcv_daily` and `fct_anomalies_daily` are recomputed over all trades each run. At 10x the history they should become incremental like `fct_trades`.
+- **Sequential downloads.** 40 symbols would take 10 times as long per day. Parallel downloads per symbol (staying under the API's weight limit) would fix it.
+- **The scheduler only runs while `dagster dev` is running.** Unattended runs need Dagster deployed as a service.
 
 ## How to run
 
@@ -94,23 +119,40 @@ pip install -r requirements.txt
 
 If activation fails with "running scripts is disabled", run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or call tools directly, for example `venv\Scripts\dbt.exe`.
 
-**Option A: everything through Dagster**
+**Crypto: connect to Project 1.** Start Project 1's database (in its folder: `docker compose up -d postgres`), then create a `.env` file here (it's gitignored) with its connection details:
+
+```
+PROJECT1_POSTGRES_HOST=localhost
+PROJECT1_POSTGRES_PORT=5432
+PROJECT1_POSTGRES_DB=crypto_db
+PROJECT1_POSTGRES_USER=crypto
+PROJECT1_POSTGRES_PASSWORD=<Project 1's POSTGRES_PASSWORD>
+```
+
+Optional settings: `CRYPTO_SYMBOLS` (default `BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT`) and `CRYPTO_START_DATE` (first partition, default `2026-09-01`). Without Project 1 the official record and analytics still build; reconciliation shows those days as "Not copied yet".
+
+**Run it through Dagster**
 
 ```powershell
 $env:DAGSTER_HOME = "$PWD\dagster_home"
 dagster dev
 ```
 
-Open http://localhost:3000 → **Jobs → daily_weather_pipeline → Materialize all**. To run it daily at 06:00 UTC, switch on the schedule under **Automation**; it only fires while `dagster dev` is running.
+Open http://localhost:3000:
+- **Jobs → daily_crypto_pipeline → Materialize**: pick a UTC day, or a range to backfill.
+- **Jobs → daily_weather_pipeline → Materialize all**.
+- **Automation**: switch on the daily schedules (crypto 02:15 UTC for yesterday, weather 06:00 UTC) and `project1_gap_sensor`. They only fire while `dagster dev` is running.
 
-**Option B: step by step**
+**Or step by step**
 
 ```powershell
-python ingestion/fetch_weather.py          # fetch today's forecasts
+python ingestion/fetch_weather.py
+python -m ingestion.crypto.exchange_history --date 2026-10-30
+python -m ingestion.crypto.stream_extract --date 2026-10-30
 cd dbt_project
 dbt deps --profiles-dir .
-dbt build --profiles-dir .                 # build all tables, run all tests and contract checks
-dbt source freshness --profiles-dir .      # warn if the newest data is over 26 h old
+dbt build --profiles-dir .                 # all models, tests and contracts
+dbt source freshness --profiles-dir .
 cd ..
 ```
 
@@ -120,9 +162,9 @@ cd ..
 streamlit run dashboard/app.py
 ```
 
-Open http://localhost:8501.
+Open http://localhost:8501. The sidebar switches between Weather and Crypto.
 
-How to handle failures (API outage, locked warehouse, stale data) is in the [runbook](docs/runbook.md).
+How to handle failures (API outage, Project 1 unreachable, locked warehouse, stale data, a failing test) is in the [runbook](docs/runbook.md).
 
 ## Development
 
@@ -134,29 +176,29 @@ mypy .
 pytest
 ```
 
-Tests never touch `data/` or the network: integration tests build throwaway warehouses from the sample data in `tests/data/` (3 cities, two overlapping runs). CI runs the same checks, plus `dbt build` on the sample data, on every push and pull request.
+Tests never touch `data/` or a live API. Integration tests build throwaway warehouses from the sample data in `tests/data/` (described in [its README](tests/data/README.md)), and the Project 1 tests start a throwaway Postgres with Project 1's schema through Testcontainers, so they need Docker. CI runs the same checks, plus `dbt build` on the sample data, on every push and pull request.
 
 ## Project layout
 
 ```
-ingestion/fetch_weather.py      Open-Meteo -> data/raw_json/fetched_on=<date>/<city>.json
-data/raw_csv/cities.csv         The 79 tracked cities
-dbt_project/                    dbt-duckdb project
-  models/staging/weather/       Typed and unnested raw data
-  models/intermediate/weather/  Latest forecast per city and hour
-  models/marts/weather/         dim_city, fct_weather_hourly, fct_weather_daily
-  tests/weather/                Custom data tests
-dagster_project/                Assets, job and schedule
-dagster_home/dagster.yaml       Dagster instance config (run history is gitignored)
-dashboard/                      Streamlit app (queries.py = data access, app.py = UI)
-tests/                          Unit, integration and smoke tests; tests/data/ is the CI sample
-docs/adr/                       Architecture decision records
-docs/runbook.md                 What to do when something breaks
-.github/workflows/ci.yml        Lint, types, dbt build and tests on every push
+ingestion/fetch_weather.py         Open-Meteo -> data/raw_json/
+ingestion/crypto/                  Binance.US history and Project 1 extract -> data/raw_crypto/ (Parquet)
+data/raw_csv/cities.csv            The 79 tracked cities
+dbt_project/                       dbt-duckdb project
+  models/{staging,intermediate,marts}/weather/
+  models/{staging,intermediate,marts}/crypto/
+  tests/{weather,crypto}/          Custom data tests
+dagster_project/                   Assets, jobs, schedules and the gap sensor
+dagster_home/dagster.yaml          Dagster instance config (run history is gitignored)
+dashboard/                         Streamlit app: app.py (navigation), weather.py, crypto.py, queries.py
+tests/                             Unit, integration and smoke tests; tests/data/ is the CI sample
+docs/adr/                          Architecture decision records
+docs/runbook.md                    What to do when something breaks
+.github/workflows/ci.yml           Lint, types, dbt build and tests on every push
 ```
 
 ## Roadmap
 
-- **Crypto trade history from Project 1.** Add the streaming platform's captured trades and exchange trade history as new sources in their own `crypto/` folders beside `weather/`, then reconcile them daily (match %, missing trade IDs, price mismatches).
-- Incremental dbt models and daily partitions in Dagster for the trade data, which, unlike forecasts, can be backfilled.
-- Apache Iceberg for the raw layer.
+- Apache Iceberg tables over the raw Parquet (schema evolution, time travel), then S3, Glue and Athena with a `dbt-athena` prod target.
+- Incremental `fct_ohlcv_daily` and `fct_anomalies_daily`.
+- Optional write-back of filled trades to Project 1 (see [ADR 8](docs/adr/0008-read-project1-never-write.md)).

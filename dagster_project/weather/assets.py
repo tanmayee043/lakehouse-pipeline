@@ -11,7 +11,7 @@ from ingestion import fetch_weather
 # lineage edge from this asset into the dbt models automatically.
 @asset(
     key=AssetKey(["raw", "weather_forecasts"]),
-    group_name="ingestion",
+    group_name="weather_ingestion",
     kinds={"python", "json"},
     # HTTP errors are already retried per request; this covers a run where some
     # cities still failed (e.g. a longer API outage). Each retry refetches all cities.
