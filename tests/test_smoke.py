@@ -26,22 +26,6 @@ def test_dagster_definitions_load_with_full_lineage(warehouse: Warehouse) -> Non
     assert defs.resolve_job_def("daily_weather_pipeline") is not None
 
 
-def test_crypto_lineage_runs_from_both_sources_into_reconciliation(warehouse: Warehouse) -> None:
-    from dagster import AssetKey
-
-    from dagster_project.definitions import defs
-
-    graph = defs.resolve_asset_graph()
-    reconciliation = graph.get(AssetKey(["fct_reconciliation_daily"]))
-    assert {k.to_user_string() for k in reconciliation.parent_keys} >= {
-        "crypto_raw/exchange_trades",
-        "crypto_raw/stream_trades",
-    }
-    assert reconciliation.partitions_def is not None  # daily partitions
-    assert graph.get(AssetKey(["raw", "weather_forecasts"])).partitions_def is None  # weather stays unpartitioned
-    assert [s.name for s in defs.sensors or ()] == ["project1_gap_sensor"]
-
-
 def run_dashboard(db_path: Path, monkeypatch: pytest.MonkeyPatch) -> AppTest:
     monkeypatch.setenv("LAKEHOUSE_DUCKDB_PATH", str(db_path))
     monkeypatch.syspath_prepend(str(DASHBOARD_DIR))

@@ -7,15 +7,3 @@ python_logs:
   # Show the ingestion script's own log lines in the Dagster run view.
   managed_python_loggers:
     - fetch_weather
-    - exchange_history
-    - stream_extract
-
-concurrency:
-  pools:
-    # DuckDB allows one writer: dbt runs share the "duckdb_warehouse" pool one at a time.
-    default_limit: 1
-  runs:
-    # One run at a time: DuckDB has a single writer, the exchange API should be called politely,
-    # and parallel run processes contend for dbt's package lock while loading the project.
-    max_concurrent_runs: 1
-

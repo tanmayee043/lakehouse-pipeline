@@ -97,37 +97,3 @@ def load_health() -> pd.DataFrame:
         order by forecast_ends_utc
         """
     )
-
-
-# ---------- crypto ----------
-
-
-def load_reconciliation() -> pd.DataFrame:
-    return _query("select * from fct_reconciliation_daily order by trade_date desc, symbol")
-
-
-def load_ohlcv(symbol: str) -> pd.DataFrame:
-    return _query(
-        """
-        select
-            o.*,
-            coalesce(a.anomalies, 0) as anomalies,
-            coalesce(a.price_anomalies, 0) as price_anomalies,
-            coalesce(a.volume_anomalies, 0) as volume_anomalies,
-            coalesce(a.both_anomalies, 0) as both_anomalies,
-            a.captured_trades
-        from fct_ohlcv_daily as o
-        left join fct_anomalies_daily as a using (symbol, trade_date)
-        where o.symbol = ?
-        order by o.trade_date
-        """,
-        [symbol],
-    )
-
-
-def load_symbols() -> list[str]:
-    return list(_query("select distinct symbol from fct_ohlcv_daily order by symbol")["symbol"])
-
-
-def load_gaps() -> pd.DataFrame:
-    return _query("select * from fct_trade_gaps order by detected_at_utc desc, symbol")

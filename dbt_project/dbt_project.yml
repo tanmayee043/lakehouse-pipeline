@@ -8,43 +8,9 @@ macro-paths: ["macros"]
 test-paths: ["tests"]
 clean-targets: ["target", "dbt_packages"]
 
-# Partition window for incremental crypto models (inclusive UTC dates). Dagster sets
-# both to the partition being run; with neither set, a run covers every available day.
-vars:
-  crypto_start_date: null
-  crypto_end_date: null
-  # Project 1 counts as switched off after this long with no captured trades (see fct_reconciliation_daily).
-  capture_session_break_minutes: 5
-
 # Everything is a table: staging reads files by relative path, so views would only
 # work from this folder. Tables keep the DuckDB file self-contained for the
 # dashboard, and a full rebuild takes seconds at this data size.
 models:
   lakehouse:
     +materialized: table
-    staging:
-      weather:
-        +tags: [weather]
-      # Crypto staging is inlined into the models that use it, so DuckDB only opens
-      # the Parquet folders for the days being built (and nothing stores file paths).
-      crypto:
-        +tags: [crypto]
-        +materialized: ephemeral
-    intermediate:
-      weather:
-        +tags: [weather]
-      crypto:
-        +tags: [crypto]
-        +materialized: ephemeral
-    marts:
-      weather:
-        +tags: [weather]
-      crypto:
-        +tags: [crypto]
-
-data_tests:
-  lakehouse:
-    weather:
-      +tags: [weather]
-    crypto:
-      +tags: [crypto]
