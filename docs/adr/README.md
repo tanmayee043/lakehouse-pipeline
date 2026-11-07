@@ -9,3 +9,7 @@ One short page per big choice: what was decided, why, and what it costs.
 5. [Every dbt model is a table](0005-every-dbt-model-is-a-table.md)
 6. [Dagster with dagster-dbt for orchestration](0006-dagster-with-dagster-dbt.md)
 7. [Committed sample data for CI](0007-committed-sample-data-for-ci.md)
+8. [Read Project 1, never write to it](0008-read-project1-never-write.md)
+9. [Reconcile by trade ID, inside Project 1's capture sessions](0009-reconcile-by-trade-id-in-the-capture-window.md)
+10. [Daily partitions, single-run backfills, one run at a time](0010-daily-partitions-one-writer.md)
+11. [Parquet raw layer with exact decimals](0011-parquet-raw-layer-exact-decimals.md)
