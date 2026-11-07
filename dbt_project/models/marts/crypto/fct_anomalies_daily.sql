@@ -1,4 +1,4 @@
--- Project 1's live anomaly flags per symbol and day. Only trades it captured were scored.
+-- The Crypto project's live anomaly flags per symbol and day. Only trades it captured were scored.
 select
     symbol,
     trade_date,

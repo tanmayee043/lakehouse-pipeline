@@ -1,4 +1,4 @@
-"""Crypto models over the sample data: Project 1's crash-day recording with planted faults.
+"""Crypto models over the sample data: the Crypto project's crash-day recording with planted faults.
 
 Planted in tests/data/raw_crypto (see tests/data/README.md):
     BTCUSDT 2025-10-10: 10 trades missing from the stream, listed as an open gap
@@ -91,7 +91,7 @@ def test_daily_candles_match_an_independent_decimal_calculation(warehouse: Wareh
     assert {k: tuple(v) for k, v in actual.items()} == expected
 
 
-def test_anomaly_counts_come_from_project1s_flags(warehouse: Warehouse) -> None:
+def test_anomaly_counts_come_from_the_crypto_projects_flags(warehouse: Warehouse) -> None:
     rows = warehouse.query(
         "select symbol, anomalies, price_anomalies, volume_anomalies, both_anomalies from fct_anomalies_daily "
         "where trade_date = '2025-10-10' order by symbol"

@@ -7,7 +7,7 @@
     )
 }}
 -- Every official trade exactly once, gaps in the live capture filled from the exchange's
--- record, with Project 1's live anomaly scores where it captured the trade.
+-- record, with the Crypto project's live anomaly scores where it captured the trade.
 -- Incremental by day: a run replaces whole days, so rerunning a day changes nothing.
 select
     symbol,

@@ -1,6 +1,6 @@
-"""Copy one UTC day of Project 1's captured trades, plus its gap list, into the raw layer.
+"""Copy one UTC day of the Crypto project's captured trades, plus its gap list, into the raw layer.
 
-Read-only: the session is opened READ ONLY, so this can never change Project 1's data.
+Read-only: the session is opened READ ONLY, so this can never change the Crypto project's data.
 
     data/raw_crypto/stream_trades/trade_date=2026-11-05/trades.parquet
     data/raw_crypto/trade_gaps/snapshot_date=2026-11-05/trade_gaps.parquet   (the whole list, as of that run)
@@ -16,7 +16,7 @@ from typing import Any
 import psycopg2
 
 from ingestion.crypto.raw_files import STREAM_TRADES, TRADE_GAPS, day_dir, write_parquet
-from ingestion.crypto.settings import CryptoSettings, Project1PostgresSettings
+from ingestion.crypto.settings import CryptoProjectPostgresSettings, CryptoSettings
 
 log = logging.getLogger("stream_extract")
 
@@ -69,8 +69,8 @@ def day_bounds(day: date) -> tuple[datetime, datetime]:
     return start, start + timedelta(days=1)
 
 
-def connect_read_only(settings: Project1PostgresSettings | None = None) -> Any:
-    conn = psycopg2.connect(**(settings or Project1PostgresSettings()).connect_args())  # type: ignore[call-arg]
+def connect_read_only(settings: CryptoProjectPostgresSettings | None = None) -> Any:
+    conn = psycopg2.connect(**(settings or CryptoProjectPostgresSettings()).connect_args())  # type: ignore[call-arg]
     conn.set_session(readonly=True, autocommit=True)
     return conn
 

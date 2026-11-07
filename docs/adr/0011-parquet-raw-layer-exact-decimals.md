@@ -8,7 +8,7 @@ Trades carry money, which must never be a float. The weather source stores raw J
 
 ## Decision
 
-Land crypto data as Parquet, one folder per UTC day (`trade_date=YYYY-MM-DD`), with prices and quantities as `DECIMAL(20,8)`, the same type Project 1 uses. API responses are validated with Pydantic, and values stay `Decimal` from the JSON response to the marts. Empty days still get an (empty) file, so "nothing captured" is distinguishable from "never extracted".
+Land crypto data as Parquet, one folder per UTC day (`trade_date=YYYY-MM-DD`), with prices and quantities as `DECIMAL(20,8)`, the same type the Crypto project uses. API responses are validated with Pydantic, and values stay `Decimal` from the JSON response to the marts. Empty days still get an (empty) file, so "nothing captured" is distinguishable from "never extracted".
 
 ## Consequences
 

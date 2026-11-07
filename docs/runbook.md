@@ -9,7 +9,7 @@ How to operate the pipeline on a laptop. All commands run from the repo root in 
 | Did today's run work? | Dagster UI → **Runs** (`$env:DAGSTER_HOME = "$PWD\dagster_home"; dagster dev`, then http://localhost:3000) |
 | Is the data fresh? | Dashboard → **Pipeline health**, or `cd dbt_project; dbt source freshness --profiles-dir .` (warns after 26 h, errors after 50 h) |
 | Which test failed? | Dagster UI → the asset's **Checks** tab, or `dbt build --profiles-dir .` output |
-| Does Project 1 agree with the exchange? | Dashboard → **Crypto** → Reconciliation |
+| Does the Crypto project agree with the exchange? | Dashboard → **Crypto** → Reconciliation |
 | Is every city covered? | Dashboard → **Pipeline health** → "Cities with forecasts" (should be 79 / 79) |
 | What did ingestion log? | Dagster run logs, or run it by hand: `python ingestion/fetch_weather.py --log-format json` |
 
@@ -53,16 +53,16 @@ How to operate the pipeline on a laptop. All commands run from the repo root in 
 - **`assert_every_city_has_forecast`:** a city in `cities.csv` has no data. Either it failed every fetch, or its name was edited so it no longer matches its file name.
 - **Contract error on a mart:** a column was renamed or changed type upstream. Update the model or the contract in `_marts.yml`, deliberately, together.
 
-## Crypto: Project 1's database isn't reachable
+## Crypto project database isn't reachable
 
-**Symptoms:** the `project1_stream` step logs "Project 1's database isn't reachable", its metadata shows `project1_reachable: false`, and the dashboard's Crypto → Reconciliation shows those days as "⏳ Not copied yet".
+**Symptoms:** the `crypto_project_stream` step logs "the Crypto project's database isn't reachable", its metadata shows `crypto_project_reachable: false`, and the dashboard's Crypto → Reconciliation shows those days as "⏳ Not copied yet".
 
-**Why it doesn't fail the run:** the official record and the analytics still build without Project 1. Only the comparison waits.
+**Why it doesn't fail the run:** the official record and the analytics still build without the Crypto project. Only the comparison waits.
 
 **Fix:**
-1. Start Project 1's database: `docker start postgres` (in Project 1's folder: `docker compose up -d postgres`).
-2. Check the lakehouse's `.env` has the `PROJECT1_POSTGRES_*` settings (see README).
-3. Re-run the affected days (next section). Project 1 keeps 90 days of trades, so there's time.
+1. Start the Crypto project's database: `docker start postgres` (in the Crypto project's folder: `docker compose up -d postgres`).
+2. Check the lakehouse's `.env` has the `CRYPTO_PROJECT_POSTGRES_*` settings (see README).
+3. Re-run the affected days (next section). The Crypto project keeps 90 days of trades, so there's time.
 
 ## Crypto: re-run or backfill days
 
@@ -79,19 +79,19 @@ Only one run executes at a time (DuckDB has one writer); the others wait in the 
 
 | Status | Meaning | Action |
 |---|---|---|
-| ✅ Complete | Every official trade in Project 1's capture window was captured, with matching price and quantity | None |
-| 🩹 Gaps filled | Project 1 lost trades while it was running (inside a capture session); they're filled from the official record | None for the lakehouse. Look at Project 1's logs for why it missed them (often a restart) |
-| 🔌 Downtime filled | Project 1 was switched off for part of the day (no capture for over 5 minutes); those trades are filled from the official record, and completeness while running is unaffected | None, unless Project 1 was supposed to be running |
-| ⚠️ Disagrees | A captured price or quantity differs from the record, or Project 1 has a trade the exchange doesn't | Compare that day's raw files for the trade: `data/raw_crypto/stream_trades/` (Project 1's copy) against `exchange_trades/` (official), both Parquet. `fct_trades` always keeps the official value, so analytics stay correct meanwhile |
-| ⏸️ Not captured | Project 1 wasn't running that day | None |
-| ⏳ Not copied yet | Project 1's database wasn't reachable when the day ran | See "Project 1's database isn't reachable" |
-| ⏳ Awaiting official record | Project 1 has trades for a day the exchange history hasn't been fetched for | Run that day's partition |
+| ✅ Complete | Every official trade in the Crypto project's capture window was captured, with matching price and quantity | None |
+| 🩹 Gaps filled | The Crypto project lost trades while it was running (inside a capture session); they're filled from the official record | None for the lakehouse. Look at the Crypto project's logs for why it missed them (often a restart) |
+| 🔌 Downtime filled | The Crypto project was switched off for part of the day (no capture for over 5 minutes); those trades are filled from the official record, and completeness while running is unaffected | None, unless the Crypto project was supposed to be running |
+| ⚠️ Disagrees | A captured price or quantity differs from the record, or the Crypto project has a trade the exchange doesn't | Compare that day's raw files for the trade: `data/raw_crypto/stream_trades/` (the Crypto project's copy) against `exchange_trades/` (official), both Parquet. `fct_trades` always keeps the official value, so analytics stay correct meanwhile |
+| ⏸️ Not captured | The Crypto project wasn't running that day | None |
+| ⏳ Not copied yet | The Crypto project's database wasn't reachable when the day ran | See "Crypto project database isn't reachable" |
+| ⏳ Awaiting official record | The Crypto project has trades for a day the exchange history hasn't been fetched for | Run that day's partition |
 
 **A gap shows "Partly filled":** it spans midnight into a day that hasn't run yet. Run the next day's partition. The `assert_reported_gaps_are_filled` test only fails once the record covers both sides of a gap and it's still not filled, which would mean a download skipped trades.
 
 ## Crypto: the gap sensor
 
-`project1_gap_sensor` (Automation tab, off by default) checks Project 1's open gaps every 15 minutes and re-runs each affected day once. A new gap on an already-run day triggers one more run of that day; an unchanged day is never re-run twice.
+`crypto_project_gap_sensor` (Automation tab, off by default) checks the Crypto project's open gaps every 15 minutes and re-runs each affected day once. A new gap on an already-run day triggers one more run of that day; an unchanged day is never re-run twice.
 
 ## Rebuild everything from the raw files
 
