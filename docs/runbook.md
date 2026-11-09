@@ -10,6 +10,7 @@ How to operate the pipeline on a laptop. All commands run from the repo root in 
 | Is the data fresh? | Dashboard → **Pipeline health**, or `cd dbt_project; dbt source freshness --profiles-dir .` (warns after 26 h, errors after 50 h) |
 | Which test failed? | Dagster UI → the asset's **Checks** tab, or `dbt build --profiles-dir .` output |
 | Does the Crypto project agree with the exchange? | Dashboard → **Crypto** → Reconciliation |
+| Are the SLOs met? | Dashboard → Crypto → Reconciliation (SLO row) and Weather → Pipeline health; `dbt test --select tag:slo --profiles-dir .`; what each one means: [slo.md](slo.md) |
 | Is every city covered? | Dashboard → **Pipeline health** → "Cities with forecasts" (should be 79 / 79) |
 | What did ingestion log? | Dagster run logs, or run it by hand: `python ingestion/fetch_weather.py --log-format json` |
 
@@ -92,6 +93,19 @@ Only one run executes at a time (DuckDB has one writer); the others wait in the 
 ## Crypto: the gap sensor
 
 `crypto_project_gap_sensor` (Automation tab, off by default) checks the Crypto project's open gaps every 15 minutes and re-runs each affected day once. A new gap on an already-run day triggers one more run of that day; an unchanged day is never re-run twice.
+
+## Running with Docker Compose
+
+| Task | Command |
+|---|---|
+| Start (rebuilds after code changes) | `docker compose up --build -d` |
+| See logs | `docker compose logs --tail 50 dagster` (or `dashboard`) |
+| Run a command inside | `docker compose exec dagster dagster job launch -j daily_crypto_pipeline --tags '{"dagster/partition": "2026-11-06"}'` |
+| Stop | `docker compose down` (data and run history stay in `./data` and `./dagster_home`) |
+
+**The Crypto project isn't reachable from the container:** its Postgres must be running on this machine and listening on the port in `.env`. The containers reach it at `host.docker.internal`; Compose sets that host automatically, so only port, database, user and password come from `.env`.
+
+**Don't run `dagster dev` locally and in Compose at the same time:** both use `./dagster_home` and the same DuckDB file, and only one may write.
 
 ## Rebuild everything from the raw files
 

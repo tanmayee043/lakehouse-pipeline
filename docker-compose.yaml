@@ -1,0 +1,32 @@
+# One command for the whole project:  docker compose up --build
+#   Dagster  http://localhost:3000   (pipeline runs, schedules, gap sensor)
+#   Dashboard http://localhost:8501
+# Both share ./data (raw files and the DuckDB warehouse) and ./dagster_home (run history).
+x-lakehouse: &lakehouse
+  build: .
+  image: lakehouse-pipeline:local
+  volumes:
+    - ./data:/app/data
+    - ./dagster_home:/app/dagster_home
+  env_file:
+    - path: .env  # CRYPTO_PROJECT_POSTGRES_* (see README); optional
+      required: false
+  environment:
+    # The Crypto project's Postgres runs on the host, outside this Compose project.
+    CRYPTO_PROJECT_POSTGRES_HOST: host.docker.internal
+  extra_hosts:
+    - "host.docker.internal:host-gateway"  # needed on Linux; Docker Desktop provides it already
+  restart: unless-stopped
+
+services:
+  dagster:
+    <<: *lakehouse
+    command: dagster dev --host 0.0.0.0 --port 3000
+    ports:
+      - "127.0.0.1:3000:3000"
+
+  dashboard:
+    <<: *lakehouse
+    command: streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 8501 --server.headless true
+    ports:
+      - "127.0.0.1:8501:8501"

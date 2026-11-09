@@ -1,5 +1,7 @@
 """Crypto page: does the Crypto project's live capture agree with the exchange's official record?"""
 
+from datetime import datetime, timedelta, timezone
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -26,6 +28,11 @@ GAP_STATUS_LABELS = {
     "partly_filled": "🩹 Partly filled (rest is on a day not fetched yet)",
     "awaiting_official_record": "⏳ Waiting for that day's record",
 }
+# Service level objectives: same targets as the dbt vars in dbt_project.yml (docs/slo.md).
+SLO_WINDOW_DAYS = 30
+SLO_COMPLETENESS_PCT = 99.9
+SLO_RECONCILED_BY_UTC_HOUR = 3
+
 STATUS_HELP = (
     "Complete: every trade matched. Gaps filled: the Crypto project lost trades while running. Downtime filled: "
     "it was switched off for part of the day. Both are filled from the official record. Disagrees: a "
@@ -63,6 +70,40 @@ def day_axis() -> alt.X:
 def price_text(price: float) -> str:
     """Two decimals for prices like BTC's; four for small ones like XRP's."""
     return f"{price:,.2f}" if price >= 100 else f"{price:,.4f}"
+
+
+def slo_row(recon: pd.DataFrame) -> None:
+    """The three crypto SLOs from docs/slo.md, each met or missed with an icon and a label."""
+    now = datetime.now(timezone.utc)
+    yesterday = now.date() - timedelta(days=1)
+    newest = pd.Timestamp(recon["trade_date"].max()).date()
+    recent = recon[pd.to_datetime(recon["trade_date"]).dt.date >= now.date() - timedelta(days=SLO_WINDOW_DAYS)]
+    below = recent[recent["completeness_pct"] < SLO_COMPLETENESS_PCT]
+    disagreements = recent["price_mismatches"] + recent["quantity_mismatches"] + recent["stream_only_trades"]
+    disagreeing = recent[disagreements > 0]
+
+    due = now.hour >= SLO_RECONCILED_BY_UTC_HOUR
+    checks = [
+        (
+            "Reconciled through yesterday",
+            newest >= yesterday or not due,
+            f"newest day {newest:%b %d}" + ("" if due else f" (due {SLO_RECONCILED_BY_UTC_HOUR:02d}:00 UTC)"),
+        ),
+        (
+            f"Completeness ≥ {SLO_COMPLETENESS_PCT}%",
+            below.empty,
+            f"last {SLO_WINDOW_DAYS} days" if below.empty else f"{len(below)} symbol-days below",
+        ),
+        (
+            "No disagreements",
+            disagreeing.empty,
+            f"last {SLO_WINDOW_DAYS} days" if disagreeing.empty else f"{len(disagreeing)} symbol-days disagree",
+        ),
+    ]
+    st.caption("Service level objectives")
+    for column, (name, met, detail) in zip(st.columns(3), checks, strict=True):
+        column.markdown(f"{'✅' if met else '⚠️'} **{name}** · {'Met' if met else 'Missed'}")
+        column.caption(detail)
 
 
 def no_crypto_data(error: Exception) -> None:
@@ -201,6 +242,8 @@ with recon_tab:
         help="Captured trades whose price or quantity differs from the official record, or that it doesn't have.",
     )
     k5.metric("Days captured", f"{captured['trade_date'].nunique()} / {recon['trade_date'].nunique()}")
+
+    slo_row(recon)
 
     st.dataframe(
         recon.assign(

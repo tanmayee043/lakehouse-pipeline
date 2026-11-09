@@ -25,4 +25,5 @@ pydeck==0.9.3
 # Crypto sources: the Crypto project's Postgres (read-only) and Parquet for the raw layer
 psycopg2-binary==2.9.12
 pyarrow==26.0.1
+pydantic==2.14.3
 pydantic-settings==2.16.2

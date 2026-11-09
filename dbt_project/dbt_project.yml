@@ -15,6 +15,11 @@ vars:
   crypto_end_date: null
   # The Crypto project counts as switched off after this long with no captured trades (see fct_reconciliation_daily).
   capture_session_break_minutes: 5
+  # Service level objectives (docs/slo.md). The tests in tests/slo/ warn when they're missed.
+  slo_window_days: 30
+  slo_crypto_completeness_pct: 99.9
+  slo_crypto_reconciled_by_utc_hour: 3
+  slo_weather_max_age_hours: 26
 
 # Everything is a table: staging reads files by relative path, so views would only
 # work from this folder. Tables keep the DuckDB file self-contained for the
@@ -48,3 +53,7 @@ data_tests:
       +tags: [weather]
     crypto:
       +tags: [crypto]
+    # A missed SLO is reported, not fatal: the pipeline keeps building (docs/slo.md).
+    slo:
+      +tags: [slo]
+      +severity: warn

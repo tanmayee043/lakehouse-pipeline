@@ -1,0 +1,17 @@
+# Keep the image small and free of local state; data/ and dagster_home/ are mounted at runtime.
+.git/
+venv/
+.env
+.claude/
+data/raw_json/
+data/raw_crypto/
+data/warehouse/*.duckdb*
+dagster_home/*
+!dagster_home/dagster.yaml
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
