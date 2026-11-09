@@ -1,0 +1,8 @@
+version: 2
+
+models:
+  - name: int_trades_compared
+    description: >
+      Every trade from either side, matched on symbol and trade ID: the official record against
+      the Crypto project's live capture, with flags for which side has it and both sides' price
+      and quantity. Both incremental marts build from this.

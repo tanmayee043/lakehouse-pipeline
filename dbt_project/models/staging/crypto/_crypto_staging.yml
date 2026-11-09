@@ -1,0 +1,18 @@
+version: 2
+
+# Ephemeral models: dbt inlines them into the models that use them, so they're not stored.
+models:
+  - name: stg_exchange_trades
+    description: The exchange's official record, typed. Money as DECIMAL(20,8), times in UTC.
+  - name: stg_stream_trades
+    description: >
+      The Crypto project's live capture, typed, with its anomaly scores. Symbols are uppercased
+      to match the exchange.
+  - name: stg_trade_gaps
+    description: >
+      The Crypto project's current gap list: only the newest snapshot, since the list changes
+      as gaps are found and resolved.
+  - name: stg_stream_extracts
+    description: >
+      One row per UTC day copied from the Crypto project, including days where it captured
+      nothing. Tells "not running" apart from "never copied".

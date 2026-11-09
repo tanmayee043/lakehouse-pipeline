@@ -9,18 +9,24 @@ models:
       contract: {enforced: true}
     columns:
       - name: city_id
+        description: "{{ doc('col_city_id') }}"
         data_type: varchar
         constraints: [{type: not_null}]
         data_tests: [unique]
       - name: city_name
+        description: "City name as written in cities.csv, accents included."
         data_type: varchar
       - name: country
+        description: "Country name."
         data_type: varchar
       - name: population
+        description: "Population from the city list."
         data_type: bigint
       - name: latitude
+        description: "Latitude in degrees (−90 to 90)."
         data_type: double
       - name: longitude
+        description: "Longitude in degrees (−180 to 180)."
         data_type: double
       - name: timezone
         data_type: varchar
@@ -40,12 +46,14 @@ models:
             combination_of_columns: [city_id, forecast_hour_utc]
     columns:
       - name: city_id
+        description: "{{ doc('col_city_id') }}"
         data_type: varchar
         constraints: [{type: not_null}]
         data_tests:
           - relationships:
               arguments: {to: ref('dim_city'), field: city_id}
       - name: forecast_hour_utc
+        description: "The forecast hour in UTC; with city_id, the table's key."
         data_type: timestamp
         constraints: [{type: not_null}]
       - name: forecast_hour_local
@@ -92,26 +100,33 @@ models:
             expression: "temperature_min_c <= temperature_avg_c and temperature_avg_c <= temperature_max_c"
     columns:
       - name: city_id
+        description: "{{ doc('col_city_id') }}"
         data_type: varchar
         constraints: [{type: not_null}]
         data_tests:
           - relationships:
               arguments: {to: ref('dim_city'), field: city_id}
       - name: forecast_date_local
+        description: "Calendar date in the city's own timezone."
         data_type: date
         constraints: [{type: not_null}]
       - name: temperature_min_c
+        description: "Lowest hourly temperature that local day, °C."
         data_type: double
       - name: temperature_max_c
+        description: "Highest hourly temperature, °C."
         data_type: double
       - name: temperature_avg_c
+        description: "Mean hourly temperature, °C, rounded to 0.1."
         data_type: double
       - name: precipitation_total_mm
+        description: "Total precipitation that local day, mm."
         data_type: double
       - name: rainy_hours
         data_type: bigint
         description: Hours with any precipitation.
       - name: wind_speed_max_kmh
+        description: "Highest hourly wind speed, km/h."
         data_type: double
       - name: hours_observed
         data_type: bigint

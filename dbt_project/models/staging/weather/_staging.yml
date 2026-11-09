@@ -8,16 +8,19 @@ models:
         description: ASCII slug of the city name, matching the raw JSON file name.
         data_tests: [unique, not_null]
       - name: latitude
+        description: "Latitude in degrees."
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
               arguments: {min_value: -90, max_value: 90}
       - name: longitude
+        description: "Longitude in degrees."
         data_tests:
           - not_null
           - dbt_utils.accepted_range:
               arguments: {min_value: -180, max_value: 180}
       - name: population
+        description: "Population from the city list."
         data_tests:
           - dbt_utils.accepted_range:
               arguments: {min_value: 0, inclusive: false}
@@ -33,6 +36,7 @@ models:
             combination_of_columns: [city_id, fetched_on, forecast_hour_utc]
     columns:
       - name: city_id
+        description: "{{ doc('col_city_id') }}"
         data_tests:
           - not_null
           - relationships:

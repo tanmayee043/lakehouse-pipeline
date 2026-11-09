@@ -1,10 +1,13 @@
 # Lakehouse Pipeline
 
 [![CI](https://github.com/tanmayee043/lakehouse-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/tanmayee043/lakehouse-pipeline/actions/workflows/ci.yml)
+[![Docs](https://github.com/tanmayee043/lakehouse-pipeline/actions/workflows/docs.yml/badge.svg)](https://tanmayee043.github.io/lakehouse-pipeline/)
 
 A batch data pipeline that lands raw data from APIs and databases, turns it into tested analytics tables, and runs on a schedule, built with the same layering, testing and orchestration patterns used on production data platforms.
 
 It answers one question for crypto trades: **do the live stream and the official history agree?** The [Crypto project](https://github.com/tanmayee043/crypto-streaming-platform) captures Binance.US trades live. This pipeline downloads the exchange's official record of every trade, reconciles the two trade by trade, and fills whatever the live capture missed.
+
+**Data catalog and lineage:** [tanmayee043.github.io/lakehouse-pipeline](https://tanmayee043.github.io/lakehouse-pipeline/). Every table's lineage graph, contract (columns and types), tests and column descriptions, rebuilt from the sample data on every merge.
 
 | Source | What | How it arrives |
 |---|---|---|
@@ -228,6 +231,7 @@ docs/runbook.md                    What to do when something breaks
 docs/slo.md                        Service level objectives
 Dockerfile, docker-compose.yaml    One-command setup: Dagster and the dashboard
 .github/workflows/ci.yml           Lint, types, dbt build, tests and the browser test on every push
+.github/workflows/docs.yml         Publishes the dbt docs (lineage, contracts) to GitHub Pages
 ```
 
 ## Roadmap
