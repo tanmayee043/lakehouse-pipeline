@@ -17,11 +17,23 @@ CITIES_CSV = (
 )
 
 
+VALID_PAYLOAD = {
+    "timezone": "UTC",
+    "hourly": {
+        "time": ["2026-11-06T00:00", "2026-11-06T01:00"],
+        "temperature_2m": [10.5, 10.1],
+        "precipitation": [0.0, 0.2],
+        "wind_speed_10m": [12.0, 14.4],
+    },
+}
+
+
 class FakeSession:
     """Returns a canned API payload, or an HTTP error for the latitudes listed in fail_lats."""
 
-    def __init__(self, fail_lats: tuple[float, ...] = ()) -> None:
+    def __init__(self, fail_lats: tuple[float, ...] = (), payload: dict | None = None) -> None:
         self.fail_lats = fail_lats
+        self.payload = payload or VALID_PAYLOAD
         self.calls: list[dict] = []
 
     def get(self, url: str, params: dict, timeout: float) -> requests.Response:
@@ -33,7 +45,7 @@ class FakeSession:
             response._content = b"Service Unavailable"
         else:
             response.status_code = 200
-            response._content = json.dumps({"timezone": "UTC", "hourly": {"time": ["2026-11-06T00:00"]}}).encode()
+            response._content = json.dumps(self.payload).encode()
         return response
 
 
@@ -126,3 +138,29 @@ def test_json_log_lines_carry_the_extra_fields() -> None:
     assert entry["message"] == "FAILED Montréal"
     assert entry["city"] == "Montréal"
     assert "path" not in entry
+
+
+def malformed(**changes: object) -> dict:
+    hourly = {**VALID_PAYLOAD["hourly"], **{k: v for k, v in changes.items() if k != "timezone"}}  # type: ignore[dict-item]
+    payload: dict = {**VALID_PAYLOAD, "hourly": hourly}
+    if "timezone" in changes:
+        payload["timezone"] = changes["timezone"]
+    return payload
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param(malformed(timezone=""), id="no timezone"),
+        pytest.param(malformed(temperature_2m=[10.5]), id="arrays of different lengths"),
+        pytest.param(malformed(precipitation=[None, 0.2]), id="null value"),
+        pytest.param(malformed(time=["not a time", "2026-11-06T01:00"]), id="bad timestamp"),
+    ],
+)
+def test_a_malformed_response_fails_the_city_and_writes_nothing(
+    payload: dict, cities_csv: Path, tmp_path: Path
+) -> None:
+    failed = run(cities_csv, tmp_path / "raw", FakeSession(payload=payload))
+
+    assert failed == ["Montréal", "Chiang Mai"]
+    assert list((tmp_path / "raw").rglob("*.json")) == []

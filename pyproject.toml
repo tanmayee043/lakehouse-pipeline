@@ -18,8 +18,10 @@ select = ["E", "F", "W", "B", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not e2e'"  # the browser test has its own CI job: pytest -m e2e
 markers = [
-    "integration: runs dbt against the sample data in tests/data (takes ~30 s)",
+    "integration: runs dbt against the sample data in tests/data, some with a throwaway Postgres (Docker)",
+    "e2e: drives the real dashboard in a browser (playwright install chromium)",
 ]
 
 [tool.mypy]

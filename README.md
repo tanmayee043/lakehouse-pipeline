@@ -11,7 +11,7 @@ It answers one question for crypto trades: **do the live stream and the official
 | **Crypto** | Every BTC, ETH, SOL and XRP trade on Binance.US (about 49,000 a day), plus the Crypto project's live capture and the gaps it reported | Daily, partitioned by UTC day; backfillable; the Crypto project is read-only |
 | **Weather** | 7-day hourly forecasts for 79 world cities from [Open-Meteo](https://open-meteo.com/) | Daily |
 
-**Result on the real data so far** (4 days, 114,872 official trades): the Crypto project lost **0 trades while it was running** (100% completeness), **0 of its 2,945 captured trades disagree** with the exchange, and the **22,423 trades from its downtime** were filled from the official record.
+**Result on the real data so far** (5 days, 142,837 official trades): the Crypto project lost **0 trades while it was running** (100% completeness), **0 of its 2,945 captured trades disagree** with the exchange, and the **22,423 trades from its downtime** were filled from the official record.
 
 | Crypto reconciliation | Crypto market |
 |---|---|
@@ -72,10 +72,24 @@ Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`. Ever
 | Guarantee | How it's enforced | How it was proven |
 |---|---|---|
 | A run never builds on partial data | The ingestion step fails if any city fails to fetch, so dbt doesn't run | Pointed ingestion at a bad URL: failure logged and reported, no partial files left behind |
+| API responses have the expected shape | Pydantic checks every response before it's saved: a timezone, equal-length hourly arrays, real timestamps and numbers | Tests feed a missing timezone, mismatched arrays, a null value and a bad timestamp: each fails the city and writes nothing. All 164 real and sample files pass |
 | Re-running a day changes nothing | Same-day runs overwrite the same files; tables are rebuilt from them | Test runs the real ingestion and `dbt build` twice for a day and compares every mart's checksum; a 0.1 °C change is detected |
 | Overlapping forecasts don't duplicate rows | `int_weather_latest` keeps the newest run's value per city and hour | Test on sample data where the older run is 1 °C warmer: no older value leaks into the overlap |
 | Time zones are right | Local wall-clock time plus the IANA zone; UTC via DuckDB's DST-aware conversion | Test checks London (0), Montréal (−5), Sydney (+11) |
 | Data is fresh | `dbt source freshness` on both sources; the dashboard shows the same status | Passes on the daily data |
+
+## Service level objectives
+
+Written targets, checked on every build and shown on the dashboard ([docs/slo.md](docs/slo.md) has how each is measured and what to do when one is missed). A miss is a warning, never a stopped pipeline.
+
+| SLO | Target |
+|---|---|
+| Crypto freshness | Yesterday (UTC) reconciled by 03:00 UTC |
+| Crypto completeness | ≥ 99.9% of official trades captured while the Crypto project was running (30 days) |
+| Crypto agreement | 0 captured trades that disagree with the official record (30 days) |
+| Weather freshness | Newest forecast fetched within 26 hours |
+
+All four are met on the current data.
 
 ## Numbers
 
@@ -83,8 +97,8 @@ Measured on a laptop (i5-1135G7, 12 GB RAM):
 
 - **Crypto:** about 49,000 official trades a day for 4 symbols; one daily partition (download, Crypto project extract, dbt build) takes **2–4 minutes**, mostly the deliberate pause between API pages
 - **Weather:** 79 cities × 168 hours = 13,272 hourly rows a day; a full run takes about 2 min 20 s
-- **`dbt build`:** 16 models (11 tables, 5 inlined) and 44 data tests, plus contracts on every mart
-- **Test suite:** 36 pytest tests (unit, integration, Testcontainers and smoke) in about 3½ minutes; CI runs it on every push
+- **`dbt build`:** 16 models (11 tables, 5 inlined), 44 data tests and 4 SLO checks, plus contracts on every mart
+- **Test suite:** 40 pytest tests (unit, integration, Testcontainers and smoke) in about 1½–3½ minutes, plus 5 browser tests in about 30 s; CI runs both on every push
 
 ## Design decisions
 
@@ -99,15 +113,29 @@ Each has a longer write-up in [docs/adr](docs/adr/README.md).
 - **Local time plus IANA zone for weather.** Daily summaries follow each city's own calendar day.
 - **Dagster with dagster-dbt.** Each dbt model is an asset and each test an asset check, so lineage and test results show in one UI. Schedules and the sensor ship switched off.
 - **Charts show one measure each, with no dual axes.** Colors come from a colorblind-checked palette; statuses always pair an icon with a label.
+- **SLOs warn, they don't block.** Their usual causes (a schedule switched off, the Crypto project offline) aren't fixed by stopping the pipeline ([ADR 12](docs/adr/0012-slos-warn-and-compose-for-local-runs.md)).
+- **One Docker image, two services.** Compose runs Dagster and the dashboard from the same image, sharing the data folder.
 
 ## What breaks at 10x (and beyond)
 
 - **One DuckDB file, one writer.** Fine for one pipeline and a few dashboard readers. Many writers or remote users need object storage, an open table format (Iceberg) and a query engine such as Athena.
 - **Aggregates rebuild in full.** `fct_ohlcv_daily` and `fct_anomalies_daily` are recomputed over all trades each run. At 10x the history they should become incremental like `fct_trades`.
 - **Sequential downloads.** 40 symbols would take 10 times as long per day. Parallel downloads per symbol (staying under the API's weight limit) would fix it.
-- **The scheduler only runs while `dagster dev` is running.** Unattended runs need Dagster deployed as a service.
+- **Scheduling depends on one machine.** Docker Compose keeps Dagster running while Docker is up, but a laptop that sleeps misses runs. Real uptime needs Dagster deployed on a server, with its webserver and daemon as separate services and Postgres for run history.
 
 ## How to run
+
+### Quickest: Docker Compose
+
+Needs Docker. Optionally create the `.env` described below to connect to the Crypto project first.
+
+```powershell
+docker compose up --build
+```
+
+Dagster opens at http://localhost:3000 and the dashboard at http://localhost:8501. Data and run history stay in `./data` and `./dagster_home` between restarts. Stop with `docker compose down`.
+
+### Or with Python
 
 Requires Python 3.11. Commands are for Windows PowerShell; on macOS or Linux use `source venv/bin/activate` and `export` instead of `$env:`.
 
@@ -176,6 +204,8 @@ mypy .
 pytest
 ```
 
+The end-to-end test drives the real dashboard in a browser (`pytest -m e2e`, after `playwright install chromium` once). It runs as its own CI job.
+
 Tests never touch `data/` or a live API. Integration tests build throwaway warehouses from the sample data in `tests/data/` (described in [its README](tests/data/README.md)), and the Crypto project tests start a throwaway Postgres with the Crypto project's schema through Testcontainers, so they need Docker. CI runs the same checks, plus `dbt build` on the sample data, on every push and pull request.
 
 ## Project layout
@@ -188,13 +218,16 @@ dbt_project/                       dbt-duckdb project
   models/{staging,intermediate,marts}/weather/
   models/{staging,intermediate,marts}/crypto/
   tests/{weather,crypto}/          Custom data tests
+  tests/slo/                       SLO checks (warn only)
 dagster_project/                   Assets, jobs, schedules and the gap sensor
 dagster_home/dagster.yaml          Dagster instance config (run history is gitignored)
 dashboard/                         Streamlit app: app.py (navigation), weather.py, crypto.py, queries.py
 tests/                             Unit, integration and smoke tests; tests/data/ is the CI sample
 docs/adr/                          Architecture decision records
 docs/runbook.md                    What to do when something breaks
-.github/workflows/ci.yml           Lint, types, dbt build and tests on every push
+docs/slo.md                        Service level objectives
+Dockerfile, docker-compose.yaml    One-command setup: Dagster and the dashboard
+.github/workflows/ci.yml           Lint, types, dbt build, tests and the browser test on every push
 ```
 
 ## Roadmap

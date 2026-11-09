@@ -13,3 +13,4 @@ One short page per big choice: what was decided, why, and what it costs.
 9. [Reconcile by trade ID, inside the Crypto project's capture sessions](0009-reconcile-by-trade-id-in-the-capture-window.md)
 10. [Daily partitions, single-run backfills, one run at a time](0010-daily-partitions-one-writer.md)
 11. [Parquet raw layer with exact decimals](0011-parquet-raw-layer-exact-decimals.md)
+12. [SLOs warn instead of failing; Docker Compose for local runs](0012-slos-warn-and-compose-for-local-runs.md)

@@ -25,7 +25,7 @@ TEMPERATURE_STOPS = [
     (40, (176, 42, 42)),
 ]
 
-FRESH_HOURS = 26  # a daily job that ran on time, plus slack
+FRESH_HOURS = 26  # the freshness SLO (docs/slo.md): a daily job that ran on time, plus slack
 STALE_HOURS = 50  # missed one run
 
 DAY_LABELS = {0: "Today", 1: "Tomorrow"}
@@ -365,11 +365,14 @@ with health_tab:
     now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
     age_hours = (now_utc - last_fetch).total_seconds() / 3600
     if age_hours <= FRESH_HOURS:
-        st.success(f"**Fresh** · last fetch {age_hours:.0f} h ago", icon="✅")
+        st.success(f"**Fresh** · last fetch {age_hours:.0f} h ago · SLO met (within {FRESH_HOURS} h)", icon="✅")
     elif age_hours <= STALE_HOURS:
-        st.warning(f"**Stale** · last fetch {age_hours:.0f} h ago, so at least one daily run was missed", icon="⚠️")
+        st.warning(
+            f"**Stale** · last fetch {age_hours:.0f} h ago, so at least one daily run was missed · SLO missed",
+            icon="⚠️",
+        )
     else:
-        st.error(f"**Out of date** · last fetch {age_hours / 24:.1f} days ago", icon="⛔")
+        st.error(f"**Out of date** · last fetch {age_hours / 24:.1f} days ago · SLO missed", icon="⛔")
 
     complete = daily_df["is_complete_day"].mean() if not daily_df.empty else 0
     h1, h2, h3, h4 = st.columns(4)

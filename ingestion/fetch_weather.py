@@ -20,6 +20,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import requests
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -94,6 +95,29 @@ def load_cities(cities_csv: Path = CITIES_CSV) -> list[dict]:
     return cities
 
 
+class HourlyForecast(BaseModel):
+    """The hourly arrays the models unnest. They must line up one-to-one."""
+
+    time: list[datetime] = Field(min_length=1)
+    temperature_2m: list[float]
+    precipitation: list[float]
+    wind_speed_10m: list[float]
+
+    @model_validator(mode="after")
+    def _same_length(self) -> "HourlyForecast":
+        lengths = {len(self.time), len(self.temperature_2m), len(self.precipitation), len(self.wind_speed_10m)}
+        if len(lengths) != 1:
+            raise ValueError(f"hourly arrays differ in length: {sorted(lengths)}")
+        return self
+
+
+class ForecastResponse(BaseModel):
+    """What the models rely on in an Open-Meteo response. Other fields pass through untouched."""
+
+    timezone: str = Field(min_length=1)  # IANA name such as "Asia/Tokyo"
+    hourly: HourlyForecast
+
+
 def fetch_weather(session: requests.Session, lat: float, lng: float) -> dict:
     params: dict[str, str | int | float] = {
         "latitude": lat,
@@ -106,7 +130,10 @@ def fetch_weather(session: requests.Session, lat: float, lng: float) -> dict:
     }
     response = session.get(API_URL, params=params, timeout=10)
     response.raise_for_status()
-    return response.json()
+    body = response.json()
+    # Check the shape before anything is written; the raw response itself is kept as-is.
+    ForecastResponse.model_validate(body)
+    return body
 
 
 def write_json(path: Path, record: dict) -> None:
@@ -148,6 +175,11 @@ def run(
             weather_data = fetch_weather(session, lat, lng)
         except requests.RequestException as e:
             log.error("FAILED %s: %s", city, e, extra={"city": city})
+            failed.append(city)
+            continue
+        except ValidationError as e:
+            # A malformed response counts as a failed city, so it never reaches dbt.
+            log.error("FAILED %s: unexpected response: %s", city, e.errors()[0]["msg"], extra={"city": city})
             failed.append(city)
             continue
 
