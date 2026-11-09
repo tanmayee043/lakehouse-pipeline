@@ -14,9 +14,11 @@ models:
             combination_of_columns: [symbol, trade_id]
     columns:
       - name: symbol
+        description: "{{ doc('col_symbol') }}"
         data_type: varchar
         constraints: [{type: not_null}]
       - name: trade_id
+        description: "{{ doc('col_trade_id') }}"
         data_type: bigint
         constraints: [{type: not_null}]
       - name: trade_date
@@ -24,15 +26,18 @@ models:
         constraints: [{type: not_null}]
         description: UTC day of the trade.
       - name: trade_time_utc
+        description: "When the trade happened, in UTC."
         data_type: timestamp
         constraints: [{type: not_null}]
       - name: price
+        description: "Trade price in the quote currency (USDT), exact."
         data_type: decimal(20,8)
         constraints: [{type: not_null}]
         data_tests:
           - dbt_utils.accepted_range:
               arguments: {min_value: 0, inclusive: false}
       - name: quantity
+        description: "Amount traded in the base currency (for example BTC), exact."
         data_type: decimal(20,8)
         constraints: [{type: not_null}]
         data_tests:
@@ -42,6 +47,7 @@ models:
         data_type: decimal(38,8)
         description: Price times quantity, in the quote currency (USDT).
       - name: is_buyer_maker
+        description: "True when the buyer's order was already on the book (the trade was a sell into a bid)."
         data_type: boolean
       - name: captured_live
         data_type: boolean
@@ -50,14 +56,17 @@ models:
         data_type: boolean
         description: The Crypto project's live flag; null when it didn't capture the trade.
       - name: anomaly_type
+        description: "Why the Crypto project flagged it: price, volume or both. Null when not flagged."
         data_type: varchar
         data_tests:
           - accepted_values:
               arguments:
                 values: [price, volume, both]
       - name: price_z
+        description: "The Crypto project's robust z-score of the price move. Null during its warm-up or when it didn't capture the trade."
         data_type: double
       - name: size_ratio
+        description: "Trade size divided by the median recent size, from the Crypto project. Null when not scored."
         data_type: double
 
   - name: fct_reconciliation_daily
@@ -79,16 +88,21 @@ models:
               and matched_trades <= captured_trades
     columns:
       - name: symbol
+        description: "{{ doc('col_symbol') }}"
         data_type: varchar
         constraints: [{type: not_null}]
       - name: trade_date
+        description: "{{ doc('col_trade_date') }}"
         data_type: date
         constraints: [{type: not_null}]
       - name: official_trades
+        description: "Trades in the exchange's official record that day."
         data_type: bigint
       - name: captured_trades
+        description: "Trades the Crypto project captured live that day."
         data_type: bigint
       - name: matched_trades
+        description: "Trades present on both sides."
         data_type: bigint
       - name: official_in_window
         data_type: bigint
@@ -112,27 +126,35 @@ models:
         data_type: bigint
         description: Captured trades the exchange has no record of (should always be 0).
       - name: price_mismatches
+        description: "Matched trades whose captured price differs from the official one."
         data_type: bigint
       - name: quantity_mismatches
+        description: "Matched trades whose captured quantity differs from the official one."
         data_type: bigint
       - name: first_captured_id
+        description: "Lowest trade ID the Crypto project captured that day."
         data_type: bigint
       - name: last_captured_id
+        description: "Highest trade ID the Crypto project captured that day."
         data_type: bigint
       - name: completeness_pct
+        description: "Share of official trades captured inside the Crypto project's capture sessions (the SLO measure). Null when it didn't run."
         data_type: double
         data_tests:
           - dbt_utils.accepted_range:
               arguments: {min_value: 0, max_value: 100}
       - name: day_coverage_pct
+        description: "Share of the whole day's official trades captured; mostly reflects how long the Crypto project ran."
         data_type: double
         data_tests:
           - dbt_utils.accepted_range:
               arguments: {min_value: 0, max_value: 100}
       - name: stream_extracted
+        description: "True when the day was copied from the Crypto project (even if it captured nothing)."
         data_type: boolean
       - name: status
         data_type: varchar
+        description: "One verdict per symbol and day: complete, gaps_filled (lost while running), downtime_filled (switched off for part of the day), disagrees, not_captured, stream_not_extracted or awaiting_official_record."
         constraints: [{type: not_null}]
         data_tests:
           - accepted_values:
@@ -161,18 +183,24 @@ models:
               and high_price >= greatest(open_price, close_price, vwap)
     columns:
       - name: symbol
+        description: "{{ doc('col_symbol') }}"
         data_type: varchar
         constraints: [{type: not_null}]
       - name: trade_date
+        description: "{{ doc('col_trade_date') }}"
         data_type: date
         constraints: [{type: not_null}]
       - name: open_price
+        description: "Price of the day's first trade (lowest trade ID)."
         data_type: decimal(20,8)
       - name: high_price
+        description: "Highest trade price of the day."
         data_type: decimal(20,8)
       - name: low_price
+        description: "Lowest trade price of the day."
         data_type: decimal(20,8)
       - name: close_price
+        description: "Price of the day's last trade (highest trade ID)."
         data_type: decimal(20,8)
       - name: volume
         data_type: decimal(38,8)
@@ -184,6 +212,7 @@ models:
         data_type: decimal(20,8)
         description: Volume-weighted average price.
       - name: trade_count
+        description: "Number of official trades that day."
         data_type: bigint
 
   - name: fct_anomalies_daily
@@ -199,25 +228,33 @@ models:
             expression: "anomalies = price_anomalies + volume_anomalies + both_anomalies and scored_trades <= captured_trades"
     columns:
       - name: symbol
+        description: "{{ doc('col_symbol') }}"
         data_type: varchar
         constraints: [{type: not_null}]
       - name: trade_date
+        description: "{{ doc('col_trade_date') }}"
         data_type: date
         constraints: [{type: not_null}]
       - name: captured_trades
+        description: "Trades the Crypto project captured that day."
         data_type: bigint
       - name: scored_trades
         data_type: bigint
         description: Captured trades past the detector's warm-up (they have a score).
       - name: anomalies
+        description: "Captured trades the Crypto project flagged as anomalous."
         data_type: bigint
       - name: price_anomalies
+        description: "Flagged for an unusual price move only."
         data_type: bigint
       - name: volume_anomalies
+        description: "Flagged for an unusually large size only."
         data_type: bigint
       - name: both_anomalies
+        description: "Flagged for both price and size."
         data_type: bigint
       - name: anomaly_rate_pct
+        description: "Anomalies as a share of scored trades."
         data_type: double
 
   - name: fct_trade_gaps
@@ -232,26 +269,33 @@ models:
             combination_of_columns: [symbol, first_missing_id]
     columns:
       - name: symbol
+        description: "{{ doc('col_symbol') }}"
         data_type: varchar
         constraints: [{type: not_null}]
       - name: first_missing_id
+        description: "First trade ID in the gap the Crypto project reported."
         data_type: bigint
         constraints: [{type: not_null}]
       - name: last_missing_id
+        description: "Last trade ID in the gap."
         data_type: bigint
       - name: missing_count
+        description: "Trades in the gap."
         data_type: bigint
       - name: trade_date
         data_type: date
         description: UTC day of the gap's first missing trade; null until the official record for it is fetched.
       - name: filled_count
+        description: "How many of the gap's trades are now in fct_trades from the official record."
         data_type: bigint
       - name: official_record_covers_gap
         data_type: boolean
         description: The official record has the trades on both sides of the gap, so the whole gap must be filled.
       - name: filled_by_lakehouse
+        description: "True when every trade in the gap has been filled."
         data_type: boolean
       - name: fill_status
+        description: "filled, partly_filled (the rest is on a day not fetched yet) or awaiting_official_record."
         data_type: varchar
         constraints: [{type: not_null}]
         data_tests:
@@ -259,6 +303,8 @@ models:
               arguments:
                 values: [filled, partly_filled, awaiting_official_record]
       - name: detected_at_utc
+        description: "When the Crypto project's gap checker found the gap."
         data_type: timestamp
       - name: resolved_in_crypto_project_at_utc
+        description: "When the Crypto project marked it resolved; usually null, since the lakehouse never writes back."
         data_type: timestamp

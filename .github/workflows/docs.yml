@@ -1,0 +1,59 @@
+name: Docs
+
+# Publishes the dbt docs (lineage, contracts, tests, descriptions) to GitHub Pages.
+# Pull requests only build the site, so a broken docs build shows up before merging.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push waits rather than cancelling one mid-deploy.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Built on the committed sample data, never the live APIs.
+      LAKEHOUSE_DATA_DIR: ${{ github.workspace }}/tests/data
+      LAKEHOUSE_DUCKDB_PATH: ${{ github.workspace }}/docs.duckdb
+      DBT_PROFILES_DIR: ${{ github.workspace }}/dbt_project
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Build the tables, then generate a single-page docs site
+        working-directory: dbt_project
+        run: |
+          dbt deps
+          dbt run
+          dbt docs generate --static
+          mkdir -p ../site
+          cp target/static_index.html ../site/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
