@@ -29,7 +29,7 @@ python_version = "3.11"
 explicit_package_bases = true
 ignore_missing_imports = true
 check_untyped_defs = true
-exclude = '^(venv|data|dbt_project|dagster_home)/'
+exclude = '^(venv|data|dbt_project|dagster_home|notes)/'
 
 [tool.ruff.lint.isort]
 known-first-party = ["ingestion", "dagster_project", "queries"]

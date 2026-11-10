@@ -22,3 +22,6 @@ dagster_home/*
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# Private notes (demo video script, drafts): never committed
+notes/

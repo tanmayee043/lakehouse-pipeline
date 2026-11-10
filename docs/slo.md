@@ -29,6 +29,6 @@ The targets live in one place for the pipeline, the `slo_*` variables in `dbt_pr
 
 ## Current status
 
-All four are met on the real data as of 7 Nov: crypto reconciled through 6 Nov, 100% completeness while running, 0 disagreements, and a weather fetch within the last 26 hours. Crypto freshness only holds while the daily schedule is on: before 6 Nov was run, it was missed (newest day 5 Nov), which is how the check was first seen working.
+All four are met on the real data as of 10 Nov: crypto reconciled through 9 Nov (16 days, the Crypto project captured 3 of them), 100% completeness while running, 0 disagreements, and a weather fetch within the last 26 hours. Crypto freshness only holds while the daily schedule is on: before 6 Nov was run, it was missed (newest day 5 Nov), which is how the check was first seen working.
 
 On the CI sample data (`tests/data/`) the two freshness SLOs always warn, because its dates are deliberately fixed in the past. That's expected: warnings don't fail the build.

@@ -14,7 +14,9 @@ It answers one question for crypto trades: **do the live stream and the official
 | **Crypto** | Every BTC, ETH, SOL and XRP trade on Binance.US (about 49,000 a day), plus the Crypto project's live capture and the gaps it reported | Daily, partitioned by UTC day; backfillable; the Crypto project is read-only |
 | **Weather** | 7-day hourly forecasts for 79 world cities from [Open-Meteo](https://open-meteo.com/) | Daily |
 
-**Result on the real data so far** (5 days, 142,837 official trades): the Crypto project lost **0 trades while it was running** (100% completeness), **0 of its 2,945 captured trades disagree** with the exchange, and the **22,423 trades from its downtime** were filled from the official record.
+**Result on the real data so far** (16 days, 387,758 official trades; the Crypto project ran on 3 of them): the Crypto project lost **0 trades while it was running** (100% completeness), **0 of its 2,945 captured trades disagree** with the exchange, and the **22,423 trades from its downtime** were filled from the official record.
+
+![A 20-second tour of the dashboard: weather, crypto reconciliation, market, gaps and time travel](docs/images/demo.gif)
 
 | Crypto reconciliation | Crypto market | Crypto time travel (Iceberg) |
 |---|---|---|
@@ -71,6 +73,7 @@ dbt builds into one DuckDB file, `data/warehouse/lakehouse.duckdb`, and every ma
 | The Crypto project's gaps get filled | `fct_trade_gaps` checks every reported gap against `fct_trades`; a test fails if a gap is still open once the record covers both sides of it | Real data: 8 of 8 gaps filled (22,423 trades), including one spanning midnight |
 | Money is never a float | `DECIMAL(20,8)` from the API response to the marts; Pydantic rejects non-positive prices | Test recomputes every daily candle (open, high, low, close, volume) in Python `Decimal` from the raw files and compares |
 | Re-running a day changes nothing | Incremental models replace whole days (`delete+insert` on `trade_date`) | Test: running a partition twice leaves every crypto mart's checksum unchanged |
+| Backfills are routine | Daily partitions; a backfill over a range runs as one Dagster run ([ADR 10](docs/adr/0010-daily-partitions-one-writer.md)) | Real 14-day backfill (27 Oct – 9 Nov): one run, 12.8 minutes, every dbt test passed and Iceberg published a new snapshot |
 | A partition run only touches its own days | The run's date window filters both the raw reads and the replaced rows | Test: delete one day's raw files, rebuild another day, and the first day's rows are still there |
 | The Crypto project is never changed | The connection is opened `READ ONLY` ([ADR 8](docs/adr/0008-read-crypto-project-never-write.md)) | Test against a real Postgres with the Crypto project's schema (Testcontainers): a `DELETE` is refused |
 | Any engine reads the same data | The marts are published as Iceberg tables | Test: DuckDB's Iceberg reader and PyIceberg return identical rows for all four tables, money still `DECIMAL(20,8)` |
@@ -104,7 +107,7 @@ All four are met on the current data.
 
 Measured on a laptop (i5-1135G7, 12 GB RAM):
 
-- **Crypto:** about 49,000 official trades a day for 4 symbols; one daily partition (download, Crypto project extract, dbt build) takes **2–4 minutes**, mostly the deliberate pause between API pages
+- **Crypto:** 10,000–50,000 official trades a day across 4 symbols; one daily partition (download, Crypto project extract, dbt build, Iceberg publish) takes **2–4 minutes**, and a **14-day backfill took 12.8 minutes** as one run, mostly the deliberate pause between API pages
 - **Weather:** 79 cities × 168 hours = 13,272 hourly rows a day; a full run takes about 2 min 20 s
 - **`dbt build`:** 16 models (11 tables, 5 inlined), 44 data tests and 4 SLO checks, plus contracts on every mart
 - **Test suite:** 45 pytest tests (unit, integration, Iceberg, Testcontainers and smoke) in about 2–3½ minutes, plus 6 browser tests in about 40 s; CI runs both on every push
