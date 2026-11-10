@@ -53,7 +53,8 @@ The dashboard's **Time travel** tab does this. From Python:
 
 ```python
 from serving import iceberg
-iceberg.snapshots("fct_reconciliation_daily")          # versions, newest first
+
+iceberg.snapshots("fct_reconciliation_daily")  # versions, newest first
 iceberg.read("fct_reconciliation_daily", snapshot_id)  # the table as it was then
 ```
 
