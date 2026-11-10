@@ -17,6 +17,7 @@ from collections.abc import Iterator
 import pytest
 from playwright.sync_api import Page, expect, sync_playwright
 
+from serving import iceberg
 from tests.conftest import PROJECT_ROOT, Warehouse
 
 pytestmark = pytest.mark.e2e
@@ -29,9 +30,16 @@ def free_port() -> int:
 
 
 @pytest.fixture(scope="module")
-def dashboard_url(warehouse: Warehouse) -> Iterator[str]:
+def dashboard_url(warehouse: Warehouse, tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
+    # One Iceberg snapshot of the sample marts, for the Time travel tab.
+    iceberg_dir = tmp_path_factory.mktemp("iceberg")
+    iceberg.publish(warehouse.db_path, iceberg_dir)
     port = free_port()
-    env = {**os.environ, "LAKEHOUSE_DUCKDB_PATH": str(warehouse.db_path)}
+    env = {
+        **os.environ,
+        "LAKEHOUSE_DUCKDB_PATH": str(warehouse.db_path),
+        "LAKEHOUSE_ICEBERG_DIR": str(iceberg_dir),
+    }
     server = subprocess.Popen(
         [
             sys.executable,
@@ -114,6 +122,15 @@ def test_market_and_gaps_tabs(page: Page) -> None:
 
     page.get_by_role("tab", name="Gaps").click()
     expect(page.get_by_text("3 of 3 gaps filled from the official record.")).to_be_visible(timeout=15_000)
+
+
+def test_time_travel_tab_reads_the_iceberg_snapshot(page: Page) -> None:
+    open_crypto(page)
+    page.get_by_role("tab", name="Time travel").click()
+    tiles = page.get_by_test_id("stMetric")
+    expect(tiles.filter(has_text="Snapshots kept")).to_contain_text("1", timeout=15_000)
+    expect(tiles.filter(has_text="Rows then")).to_contain_text("6 → 6")
+    expect(page.get_by_text("This is the current version.")).to_be_visible()
 
 
 @pytest.mark.parametrize("link", ["Weather", "Crypto"])

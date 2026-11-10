@@ -22,6 +22,8 @@ This site is generated from the dbt project on every merge to `main`, built on t
 
 Start with **`fct_reconciliation_daily`**: it's the headline table.
 
+After each run, the four daily crypto marts are also published as **Apache Iceberg** tables, with a snapshot per change for time travel and readable by any engine. That step runs outside dbt (in Dagster), so it isn't in this lineage graph.
+
 ## More
 
 - [Repository and README](https://github.com/tanmayee043/lakehouse-pipeline)

@@ -27,3 +27,6 @@ psycopg2-binary==2.9.12
 pyarrow==26.0.1
 pydantic==2.14.3
 pydantic-settings==2.16.2
+
+# Serving layer: the crypto marts as Apache Iceberg tables (local SQLite catalog)
+pyiceberg[sql-sqlite,pyarrow]==0.12.0

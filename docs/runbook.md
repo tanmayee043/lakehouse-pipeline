@@ -94,6 +94,28 @@ Only one run executes at a time (DuckDB has one writer); the others wait in the 
 
 `crypto_project_gap_sensor` (Automation tab, off by default) checks the Crypto project's open gaps every 15 minutes and re-runs each affected day once. A new gap on an already-run day triggers one more run of that day; an unchanged day is never re-run twice.
 
+## Crypto: query an Iceberg snapshot
+
+The four daily crypto marts are published to Iceberg in `data/iceberg/` after every crypto run. The dashboard's Crypto → **Time travel** tab shows any snapshot. From Python:
+
+```python
+from serving import iceberg
+
+iceberg.snapshots("fct_reconciliation_daily")  # versions, newest first
+iceberg.read("fct_reconciliation_daily", snapshot_id)  # the table as it was then (pyarrow)
+```
+
+From DuckDB (any engine that reads Iceberg works the same way):
+
+```sql
+install iceberg; load iceberg;
+select * from iceberg_scan('<path printed by iceberg.metadata_location("fct_reconciliation_daily")>');
+```
+
+**A publish shows `new_snapshot: false`:** the rows were identical to the current snapshot, so nothing was added. That's expected on reruns.
+
+**Start Iceberg history over:** delete `data/iceberg/` and run any crypto partition; the next publish recreates the tables from the warehouse. Older snapshots are lost.
+
 ## Running with Docker Compose
 
 | Task | Command |

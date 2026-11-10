@@ -14,3 +14,4 @@ One short page per big choice: what was decided, why, and what it costs.
 10. [Daily partitions, single-run backfills, one run at a time](0010-daily-partitions-one-writer.md)
 11. [Parquet raw layer with exact decimals](0011-parquet-raw-layer-exact-decimals.md)
 12. [SLOs warn instead of failing; Docker Compose for local runs](0012-slos-warn-and-compose-for-local-runs.md)
+13. [Apache Iceberg for the published marts, not the raw layer](0013-iceberg-for-the-published-marts.md)
