@@ -4,14 +4,14 @@
 
 ## Context
 
-The pipeline lands about 13,000 hourly rows a day for 79 cities. It needs SQL transforms with tests, a place for the dashboard to read from, and it has to run on a laptop and in CI for free.
+I needed SQL transforms with tests and somewhere for the dashboard to read from, all running free on a laptop and in CI.
 
 ## Decision
 
-Use DuckDB, stored as a single file at `data/warehouse/lakehouse.duckdb`, with dbt-duckdb for the transforms. DuckDB reads the raw JSON and CSV files directly, so there is no separate load step. Postgres was the main alternative, but it needs a running server for what is a single-user analytical workload.
+DuckDB, as one file (`data/warehouse/lakehouse.duckdb`), with dbt-duckdb. It reads JSON, CSV and Parquet directly, so there's no load step. Postgres was the alternative, but it needs a server for what's a single-user workload.
 
 ## Consequences
 
-- No server to run, and the same warehouse works on the laptop, in CI and in tests (each test builds its own throwaway file).
-- One writer at a time. A dbt build locks the file, so the dashboard opens it read-only and shows "busy, try again" during a build.
-- Not shared: remote users or several pipelines writing at once would need object storage, an open table format and a query engine (see the README's "What breaks at 10x").
+- No server, and the same setup works on the laptop, in CI and in tests.
+- One writer at a time, so the dashboard opens it read-only and says "busy" during a build.
+- Not built for sharing. Many users or writers would need object storage and a query engine (see the README's limitations).

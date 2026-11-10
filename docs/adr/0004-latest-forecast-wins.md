@@ -4,15 +4,14 @@
 
 ## Context
 
-Each daily run fetches 7 days ahead, so consecutive runs overlap by six days. Without a rule, every hour would appear up to seven times.
+Each daily run fetches 7 days ahead, so runs overlap by six days. Without a rule, each hour would appear up to seven times.
 
 ## Decision
 
-`int_weather_latest` keeps, for each city and UTC hour, the value from the run with the newest `fetched_at`. The rule lives in one intermediate model that all marts read from, and a uniqueness test on `(city_id, forecast_hour_utc)` guards it.
+`int_weather_latest` keeps the newest run's value for each city and hour. Every mart reads from it, and a uniqueness test guards it.
 
 ## Consequences
 
-- The marts always show the most recent forecast; older forecasts stay in staging and in the raw files.
-- Hours that only an older run covers (days already in the past) are kept, so history accumulates.
-- Comparing how forecasts changed between runs (forecast accuracy) would need its own model over staging, not the marts.
-- Tested with sample data where the older run is 1 °C warmer: no older value appears in the overlap.
+- The marts show the latest forecast; older ones stay in staging and the raw files.
+- Comparing forecasts across runs (accuracy) would need its own model.
+- Tested with an older sample run that's 1 °C warmer: it never leaks into the overlap.

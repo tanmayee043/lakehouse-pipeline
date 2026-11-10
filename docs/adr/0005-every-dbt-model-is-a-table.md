@@ -1,21 +1,17 @@
-# 5. Every dbt model is a table
+# 5. Weather models are tables, crypto staging is inlined
 
 **Status:** accepted
 
 ## Context
 
-Staging reads the raw files by a path relative to `dbt_project/`. As views, the staging models stored that relative path, so querying them from anywhere else (the dashboard, a notebook) failed.
+As views, the weather staging models stored a file path relative to `dbt_project/`, so querying them from the dashboard or a notebook failed.
 
 ## Decision
 
-Materialize every model as a table, including staging and intermediate. The DuckDB file is then self-contained, and the dashboard can read it from any folder.
+Every weather model is a table, so the DuckDB file works from any folder. Crypto staging and intermediate models are ephemeral instead: dbt inlines them, so nothing stores a path and DuckDB only opens the days a run needs. `fct_trades` and `fct_reconciliation_daily` are incremental, one day at a time.
 
 ## Consequences
 
-- A full rebuild takes about 7 seconds at today's size.
-- Every run rebuilds everything. At 10x the data, the hourly models should become incremental (merge on city and hour).
-- The marts also carry enforced dbt contracts, so their shape can't drift unnoticed.
-
-## Update: crypto models (ADR 10, 11)
-
-Crypto staging and intermediate models are *ephemeral* instead: dbt inlines them into the models that use them, so nothing in the warehouse stores a file path, and DuckDB opens only the day folders a run needs. `fct_trades` and `fct_reconciliation_daily` are *incremental* tables, rebuilt one day at a time. Everything the dashboard reads is still a table.
+- Everything the dashboard reads is a table.
+- Weather rebuilds fully each run (about 7 seconds). At 10x the data, the hourly models should go incremental too.
+- Every mart has an enforced dbt contract, so its shape can't drift unnoticed.

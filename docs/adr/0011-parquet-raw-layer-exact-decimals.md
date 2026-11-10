@@ -1,16 +1,16 @@
 # 11. Parquet raw layer with exact decimals
 
-**Status:** accepted (Iceberg planned on top)
+**Status:** accepted
 
 ## Context
 
-Trades carry money, which must never be a float. The weather source stores raw JSON, but trades are far more numerous (about 49,000 a day for 4 symbols) and strongly typed.
+Trades are money, so they must never be floats. There are also far more of them than weather rows (about 49,000 a day).
 
 ## Decision
 
-Land crypto data as Parquet, one folder per UTC day (`trade_date=YYYY-MM-DD`), with prices and quantities as `DECIMAL(20,8)`, the same type the Crypto project uses. API responses are validated with Pydantic, and values stay `Decimal` from the JSON response to the marts. Empty days still get an (empty) file, so "nothing captured" is distinguishable from "never extracted".
+Save crypto data as Parquet, one folder per UTC day, with prices and quantities as `DECIMAL(20,8)`, the same type the Crypto project uses. Responses are checked with Pydantic, and values stay `Decimal` all the way to the marts. Empty days still get an empty file, so "nothing captured" differs from "never fetched".
 
 ## Consequences
 
-- dbt reads only the day folders a run needs, and money stays exact end to end (a test recomputes every daily candle in Python `Decimal` and compares).
-- Plain Parquet has no schema evolution or time travel. Apache Iceberg can be added over these same files later without changing the models.
+- dbt only reads the days a run needs, and money stays exact (a test recomputes every daily candle in Python).
+- No time travel on raw files; the published marts have it instead ([ADR 13](0013-iceberg-for-the-published-marts.md)).
