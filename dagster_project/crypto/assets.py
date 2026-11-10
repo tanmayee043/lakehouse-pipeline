@@ -15,10 +15,12 @@ from dagster import (
 )
 
 from dagster_project.crypto.partitions import crypto_partitions, days_in, partition_days
+from dagster_project.dbt_assets import WAREHOUSE_POOL
 from ingestion.crypto.exchange_history import fetch_and_write
 from ingestion.crypto.settings import CryptoSettings
 from ingestion.crypto.stream_extract import connect_read_only, extract_day
 from ingestion.fetch_weather import make_session
+from serving import iceberg
 
 # Keys match the dbt sources in models/staging/crypto/_crypto_sources.yml, so Dagster
 # draws the lineage from these assets into the dbt models.
@@ -90,3 +92,34 @@ def crypto_project_stream(context: AssetExecutionContext) -> Iterator[Materializ
     )
     yield MaterializeResult(asset_key=STREAM_EXTRACTS, metadata={"days_copied": len(days)})
     yield MaterializeResult(asset_key=TRADE_GAPS, metadata={"gaps_in_crypto_project": gaps})
+
+
+ICEBERG_KEYS = {name: AssetKey(["iceberg", name]) for name in iceberg.PUBLISHED_TABLES}
+
+
+@multi_asset(
+    specs=[
+        AssetSpec(
+            key,
+            deps=[AssetKey([name])],
+            description=f"{name} as an Apache Iceberg table: one snapshot per change, readable by any engine.",
+            kinds={"iceberg"},
+        )
+        for name, key in ICEBERG_KEYS.items()
+    ],
+    group_name="crypto_serving",
+    partitions_def=crypto_partitions,
+    backfill_policy=BackfillPolicy.single_run(),
+    pool=WAREHOUSE_POOL,
+)
+def iceberg_marts(context: AssetExecutionContext) -> Iterator[MaterializeResult]:
+    """Publish the crypto marts to Iceberg after dbt builds them.
+
+    Each table is published whole (they're small daily summaries), so the partition only lines
+    the step up with the run; a publish that changes nothing adds no snapshot.
+    """
+    for result in iceberg.publish():
+        yield MaterializeResult(
+            asset_key=ICEBERG_KEYS[result.table],
+            metadata={"rows": result.rows, "new_snapshot": result.changed, "snapshot_id": str(result.snapshot_id)},
+        )

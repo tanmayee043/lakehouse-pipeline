@@ -8,7 +8,7 @@ from dagster import (
 )
 from dagster_dbt import DbtCliResource
 
-from dagster_project.crypto.assets import crypto_project_stream, exchange_trades
+from dagster_project.crypto.assets import crypto_project_stream, exchange_trades, iceberg_marts
 from dagster_project.crypto.sensors import build_gap_sensor
 from dagster_project.dbt_assets import crypto_dbt_assets, dbt_project, weather_dbt_assets
 from dagster_project.weather.assets import raw_weather_forecasts
@@ -23,9 +23,9 @@ daily_weather_pipeline = define_asset_job(
 
 daily_crypto_pipeline = define_asset_job(
     name="daily_crypto_pipeline",
-    selection=AssetSelection.assets(exchange_trades, crypto_project_stream, crypto_dbt_assets),
+    selection=AssetSelection.assets(exchange_trades, crypto_project_stream, crypto_dbt_assets, iceberg_marts),
     description="For one UTC day (or a backfill range): fetch the official record, copy the Crypto project's capture, "
-    "then reconcile and rebuild the crypto models.",
+    "reconcile and rebuild the crypto models, then publish them to Iceberg.",
 )
 
 daily_weather_schedule = ScheduleDefinition(
@@ -45,7 +45,14 @@ daily_crypto_schedule = build_schedule_from_partitioned_job(
 )
 
 defs = Definitions(
-    assets=[raw_weather_forecasts, weather_dbt_assets, exchange_trades, crypto_project_stream, crypto_dbt_assets],
+    assets=[
+        raw_weather_forecasts,
+        weather_dbt_assets,
+        exchange_trades,
+        crypto_project_stream,
+        crypto_dbt_assets,
+        iceberg_marts,
+    ],
     jobs=[daily_weather_pipeline, daily_crypto_pipeline],
     schedules=[daily_weather_schedule, daily_crypto_schedule],
     sensors=[build_gap_sensor(daily_crypto_pipeline)],

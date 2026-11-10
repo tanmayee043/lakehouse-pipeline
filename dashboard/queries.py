@@ -1,12 +1,20 @@
-"""Read-only access to the DuckDB warehouse built by dbt."""
+"""Read-only access to the DuckDB warehouse built by dbt, and to the Iceberg snapshots."""
 
 import os
+import sys
 from pathlib import Path
 
 import duckdb
 import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# `streamlit run dashboard/app.py` only puts dashboard/ on the import path; the shared
+# Iceberg module lives at the repo root.
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from serving import iceberg  # noqa: E402
+
 DUCKDB_PATH = Path(os.environ.get("LAKEHOUSE_DUCKDB_PATH", PROJECT_ROOT / "data" / "warehouse" / "lakehouse.duckdb"))
 
 
@@ -131,3 +139,21 @@ def load_symbols() -> list[str]:
 
 def load_gaps() -> pd.DataFrame:
     return _query("select * from fct_trade_gaps order by detected_at_utc desc, symbol")
+
+
+# ---------- Iceberg time travel ----------
+
+
+def load_snapshots(name: str) -> list[iceberg.SnapshotInfo]:
+    """Published versions of a mart, newest first. Raises WarehouseUnavailable if none exist yet."""
+    try:
+        found = iceberg.snapshots(name)
+    except Exception as e:  # no catalog file, or the table was never published
+        raise WarehouseUnavailable("No Iceberg snapshots yet. Run daily_crypto_pipeline once.") from e
+    if not found:
+        raise WarehouseUnavailable("No Iceberg snapshots yet. Run daily_crypto_pipeline once.")
+    return found
+
+
+def load_snapshot(name: str, snapshot_id: int) -> pd.DataFrame:
+    return iceberg.read(name, snapshot_id).to_pandas()

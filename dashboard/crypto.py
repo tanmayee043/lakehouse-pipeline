@@ -106,6 +106,45 @@ def slo_row(recon: pd.DataFrame) -> None:
         column.caption(detail)
 
 
+# Published Iceberg tables, their row keys, and how they're labelled.
+TRAVEL_TABLES = {
+    "fct_reconciliation_daily": ("Reconciliation", ["symbol", "trade_date"]),
+    "fct_ohlcv_daily": ("Daily prices", ["symbol", "trade_date"]),
+    "fct_anomalies_daily": ("Anomalies", ["symbol", "trade_date"]),
+    "fct_trade_gaps": ("Gaps", ["symbol", "first_missing_id"]),
+}
+
+
+@st.cache_data(ttl=600, show_spinner="Loading snapshots…")
+def snapshot_list(name: str) -> list[tuple[int, str, int]]:
+    return [(s.snapshot_id, f"{s.committed_at:%b %d, %H:%M} UTC", s.rows) for s in queries.load_snapshots(name)]
+
+
+@st.cache_data(show_spinner="Reading snapshot…")  # a snapshot never changes, so no expiry needed
+def snapshot_rows(name: str, snapshot_id: int) -> pd.DataFrame:
+    return queries.load_snapshot(name, snapshot_id)
+
+
+def compare(then: pd.DataFrame, now: pd.DataFrame, key: list[str]) -> pd.DataFrame:
+    """Rows added, removed or changed between two versions of a table, matched on its key."""
+    both = then.merge(now, on=key, how="outer", suffixes=(" then", " now"), indicator=True)
+    values = [c for c in then.columns if c not in key]
+    changed_cols = []
+    for _, row in both.iterrows():
+        if row["_merge"] != "both":
+            changed_cols.append("")
+            continue
+        diff = [c for c in values if not (pd.isna(row[f"{c} then"]) and pd.isna(row[f"{c} now"]))
+                and row[f"{c} then"] != row[f"{c} now"]]  # fmt: skip
+        changed_cols.append(", ".join(diff))
+    both["change"] = [
+        {"left_only": "Removed", "right_only": "Added"}.get(m, "Changed" if cols else "")
+        for m, cols in zip(both["_merge"], changed_cols, strict=True)
+    ]
+    both["columns changed"] = changed_cols
+    return both[both["change"] != ""][[*key, "change", "columns changed"]]
+
+
 def no_crypto_data(error: Exception) -> None:
     st.info(
         "No crypto data yet. In Dagster, materialize **daily_crypto_pipeline** for a day (or backfill a range), "
@@ -207,7 +246,7 @@ if recon.empty:
     st.info("The crypto tables exist but hold no days yet. Run **daily_crypto_pipeline** in Dagster.", icon="ℹ️")
     st.stop()
 
-recon_tab, market_tab, gaps_tab = st.tabs(["Reconciliation", "Market", "Gaps"])
+recon_tab, market_tab, gaps_tab, travel_tab = st.tabs(["Reconciliation", "Market", "Gaps", "Time travel"])
 
 # ----- Reconciliation -----
 with recon_tab:
@@ -361,3 +400,45 @@ with gaps_tab:
                 "crypto_project": "Crypto project",
             },
         )
+
+# ----- Time travel -----
+with travel_tab:
+    st.caption(
+        "Each pipeline run that changes a table adds an Iceberg snapshot. Pick one to see the table as it was then, "
+        "and what has changed since."
+    )
+    name = (
+        st.selectbox("Table", list(TRAVEL_TABLES), format_func=lambda n: TRAVEL_TABLES[n][0])
+        or "fct_reconciliation_daily"
+    )
+    try:
+        versions = snapshot_list(name)
+    except queries.WarehouseUnavailable as e:
+        st.info(str(e), icon="ℹ️")
+        st.stop()
+
+    labels = {sid: f"{when} · {rows:,} rows" for sid, when, rows in versions}
+    # Default to the previous version, so there's something to compare with when there is one.
+    default = 1 if len(versions) > 1 else 0
+    chosen = st.selectbox("As of", list(labels), index=default, format_func=lambda sid: labels[sid])
+    chosen = chosen if chosen is not None else versions[default][0]
+
+    then = snapshot_rows(name, chosen)
+    now = snapshot_rows(name, versions[0][0])
+    changes = compare(then, now, TRAVEL_TABLES[name][1])
+
+    t1, t2, t3 = st.columns(3)
+    t1.metric("Snapshots kept", f"{len(versions)}", help="Snapshots older than 90 days are expired.")
+    t2.metric("Rows then → now", f"{len(then):,} → {len(now):,}")
+    t3.metric("Rows changed since", f"{len(changes):,}")
+
+    if chosen == versions[0][0]:
+        st.caption("This is the current version.")
+    elif changes.empty:
+        st.success("Nothing has changed since this snapshot.", icon="✅")
+    else:
+        st.subheader("Changed since then")
+        st.dataframe(changes, hide_index=True, width="stretch")
+
+    st.subheader("The table as of then")
+    st.dataframe(then, hide_index=True, width="stretch")

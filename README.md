@@ -16,9 +16,9 @@ It answers one question for crypto trades: **do the live stream and the official
 
 **Result on the real data so far** (5 days, 142,837 official trades): the Crypto project lost **0 trades while it was running** (100% completeness), **0 of its 2,945 captured trades disagree** with the exchange, and the **22,423 trades from its downtime** were filled from the official record.
 
-| Crypto reconciliation | Crypto market |
-|---|---|
-| ![Reconciliation page](docs/images/crypto-reconciliation.png) | ![Market page](docs/images/crypto-market.png) |
+| Crypto reconciliation | Crypto market | Crypto time travel (Iceberg) |
+|---|---|---|
+| ![Reconciliation page](docs/images/crypto-reconciliation.png) | ![Market page](docs/images/crypto-market.png) | ![Time travel page](docs/images/crypto-time-travel.png) |
 
 | Weather forecast | Compare cities | Weather pipeline health |
 |---|---|---|
@@ -37,8 +37,11 @@ flowchart LR
     CMP --> REC[fct_reconciliation_daily<br/>incremental]
     FT --> GOLD[fct_ohlcv_daily · fct_anomalies_daily · fct_trade_gaps]
     OM[Open-Meteo API] --> WI[Weather ingestion] --> RJ[(Raw JSON)] --> WM[Weather models]
+    REC --> ICE[(Apache Iceberg<br/>snapshots, time travel)]
+    GOLD --> ICE
     REC --> DASH[Streamlit dashboard]
     GOLD --> DASH
+    ICE --> DASH
     WM --> DASH
     DAG{{Dagster: daily partitions, backfills,<br/>gap sensor, schedules, lineage}} -.runs.-> XH
     DAG -.runs.-> SX
@@ -50,9 +53,10 @@ flowchart LR
 | **Raw** | `data/raw_crypto/<source>/trade_date=YYYY-MM-DD/*.parquet`, money as `DECIMAL(20,8)`, never edited | `data/raw_json/fetched_on=YYYY-MM-DD/<city>.json`, never edited |
 | **Staging** | Ephemeral (inlined): typed, symbols normalised, only the days being run are read | `stg_cities`, `stg_weather_hourly`: unnested, local time to UTC with DST handled |
 | **Intermediate** | `int_trades_compared`: full outer join of the official record and the Crypto project's capture | `int_weather_latest`: newest forecast per city and hour |
-| **Marts** | `fct_trades`, `fct_reconciliation_daily`, `fct_ohlcv_daily`, `fct_anomalies_daily`, `fct_trade_gaps` | `dim_city`, `fct_weather_hourly`, `fct_weather_daily` |
+| **Marts** | `fct_trades`, `fct_reconciliation_daily`, `fct_ohlcv_daily`, `fct_anomalies_daily`, `fct_trade_gaps` (all incremental by day except gaps) | `dim_city`, `fct_weather_hourly`, `fct_weather_daily` |
+| **Serving** | The four daily marts published as **Apache Iceberg** tables: a snapshot per change, time travel, readable by any engine | — |
 
-Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`. Every mart has an enforced dbt contract.
+dbt builds into one DuckDB file, `data/warehouse/lakehouse.duckdb`, and every mart has an enforced dbt contract. The published Iceberg tables live in `data/iceberg/` (local SQLite catalog), partitioned by day ([ADR 13](docs/adr/0013-iceberg-for-the-published-marts.md)).
 
 ## How the data is kept correct
 
@@ -69,6 +73,8 @@ Everything is stored in one DuckDB file, `data/warehouse/lakehouse.duckdb`. Ever
 | Re-running a day changes nothing | Incremental models replace whole days (`delete+insert` on `trade_date`) | Test: running a partition twice leaves every crypto mart's checksum unchanged |
 | A partition run only touches its own days | The run's date window filters both the raw reads and the replaced rows | Test: delete one day's raw files, rebuild another day, and the first day's rows are still there |
 | The Crypto project is never changed | The connection is opened `READ ONLY` ([ADR 8](docs/adr/0008-read-crypto-project-never-write.md)) | Test against a real Postgres with the Crypto project's schema (Testcontainers): a `DELETE` is refused |
+| Any engine reads the same data | The marts are published as Iceberg tables | Test: DuckDB's Iceberg reader and PyIceberg return identical rows for all four tables, money still `DECIMAL(20,8)` |
+| History is kept, and only real changes add to it | Each publish is an Iceberg snapshot; a publish with identical rows is skipped (SHA-256 of the rows); snapshots expire after 90 days | Tests: unchanged republish adds no snapshot; an older snapshot returns the old rows; expiry keeps the current one; a new column evolves the schema |
 
 ### Weather
 
@@ -101,12 +107,13 @@ Measured on a laptop (i5-1135G7, 12 GB RAM):
 - **Crypto:** about 49,000 official trades a day for 4 symbols; one daily partition (download, Crypto project extract, dbt build) takes **2–4 minutes**, mostly the deliberate pause between API pages
 - **Weather:** 79 cities × 168 hours = 13,272 hourly rows a day; a full run takes about 2 min 20 s
 - **`dbt build`:** 16 models (11 tables, 5 inlined), 44 data tests and 4 SLO checks, plus contracts on every mart
-- **Test suite:** 40 pytest tests (unit, integration, Testcontainers and smoke) in about 1½–3½ minutes, plus 5 browser tests in about 30 s; CI runs both on every push
+- **Test suite:** 45 pytest tests (unit, integration, Iceberg, Testcontainers and smoke) in about 2–3½ minutes, plus 6 browser tests in about 40 s; CI runs both on every push
 
 ## Design decisions
 
 Each has a longer write-up in [docs/adr](docs/adr/README.md).
 
+- **Iceberg for the published marts, not the raw layer.** Time travel matters on tables that change (reconciliation as of last Tuesday); raw files never change, and Parquet keeps dbt's day-folder skipping.
 - **Read the Crypto project, never write to it.** A one-way boundary: the Crypto project produces, the lakehouse consumes. Recovered trades live only in the lakehouse.
 - **Reconcile by trade ID inside capture sessions.** Sequential IDs make the official record complete by construction, and sessions keep downtime from looking like data loss.
 - **Daily partitions, one run at a time.** Trade history can be backfilled, so crypto assets are partitioned by UTC day. A backfill runs as one run, and the instance runs one job at a time because DuckDB has a single writer.
@@ -122,7 +129,7 @@ Each has a longer write-up in [docs/adr](docs/adr/README.md).
 ## What breaks at 10x (and beyond)
 
 - **One DuckDB file, one writer.** Fine for one pipeline and a few dashboard readers. Many writers or remote users need object storage, an open table format (Iceberg) and a query engine such as Athena.
-- **Aggregates rebuild in full.** `fct_ohlcv_daily` and `fct_anomalies_daily` are recomputed over all trades each run. At 10x the history they should become incremental like `fct_trades`.
+- **A local Iceberg catalog.** SQLite and local files serve one machine. Shared access needs the same tables on object storage (S3) with a shared catalog (Glue or REST).
 - **Sequential downloads.** 40 symbols would take 10 times as long per day. Parallel downloads per symbol (staying under the API's weight limit) would fix it.
 - **Scheduling depends on one machine.** Docker Compose keeps Dagster running while Docker is up, but a laptop that sleeps misses runs. Real uptime needs Dagster deployed on a server, with its webserver and daemon as separate services and Postgres for run history.
 
@@ -225,6 +232,7 @@ dbt_project/                       dbt-duckdb project
 dagster_project/                   Assets, jobs, schedules and the gap sensor
 dagster_home/dagster.yaml          Dagster instance config (run history is gitignored)
 dashboard/                         Streamlit app: app.py (navigation), weather.py, crypto.py, queries.py
+serving/iceberg.py                 Publishes the crypto marts to Iceberg; reads any snapshot
 tests/                             Unit, integration and smoke tests; tests/data/ is the CI sample
 docs/adr/                          Architecture decision records
 docs/runbook.md                    What to do when something breaks
@@ -236,6 +244,5 @@ Dockerfile, docker-compose.yaml    One-command setup: Dagster and the dashboard
 
 ## Roadmap
 
-- Apache Iceberg tables over the raw Parquet (schema evolution, time travel), then S3, Glue and Athena with a `dbt-athena` prod target.
-- Incremental `fct_ohlcv_daily` and `fct_anomalies_daily`.
+- The Iceberg tables on S3 with the Glue catalog, and Athena with a `dbt-athena` prod target (a cross-engine test against Athena).
 - Optional write-back of filled trades to the Crypto project (see [ADR 8](docs/adr/0008-read-crypto-project-never-write.md)).

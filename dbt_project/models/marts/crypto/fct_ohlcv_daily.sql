@@ -1,4 +1,13 @@
+{{
+    config(
+        materialized='incremental',
+        incremental_strategy='delete+insert',
+        unique_key='trade_date',
+        on_schema_change='fail'
+    )
+}}
 -- Daily candles per symbol from the complete official record (exact decimals throughout).
+-- Incremental by day like fct_trades: a run recomputes only the days it covers.
 select
     symbol,
     trade_date,
@@ -11,4 +20,5 @@ select
     cast(sum(quote_amount) / sum(quantity) as decimal(20, 8)) as vwap,
     count(*) as trade_count
 from {{ ref('fct_trades') }}
+where {{ crypto_window('trade_date') }}
 group by all
