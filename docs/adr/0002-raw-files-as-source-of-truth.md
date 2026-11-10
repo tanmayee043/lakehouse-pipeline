@@ -4,15 +4,14 @@
 
 ## Context
 
-API responses are the only copy of the data, and forecasts can't be fetched again later: once a day has passed, that day's forecast is gone. Models, tests and bugs will change over time.
+API responses are the only copy of the data, and a past day's forecast can't be fetched again. Models and bugs will change over time.
 
 ## Decision
 
-Ingestion writes each API response untouched (plus the city's metadata and fetch time) to `data/raw_json/fetched_on=YYYY-MM-DD/<city>.json`. Nothing downstream edits these files. Every table is rebuilt from them by `dbt build`. Writes go through a temp file and a rename, so a crash never leaves half-written JSON behind.
+Save every API response untouched to `data/raw_json/fetched_on=YYYY-MM-DD/<city>.json` and never edit it. Every table is rebuilt from these files. Writes go through a temp file and a rename, so a crash never leaves half a file.
 
 ## Consequences
 
-- Any model change or bug fix applies to all history with one rebuild.
-- Re-running a day overwrites that day's files instead of adding duplicates.
-- The raw folder grows by about 1.3 MB a day and is never pruned. That's fine for years at this size, but retention or compaction will be needed eventually.
-- The raw layer is plain files, not a table format: no schema evolution or time travel (Iceberg is on the roadmap).
+- A bug fix applies to all history with one rebuild.
+- Re-running a day overwrites its files instead of duplicating them.
+- The folder grows about 1.3 MB a day and is never pruned, which is fine for years at this size.

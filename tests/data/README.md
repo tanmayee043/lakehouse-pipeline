@@ -1,10 +1,10 @@
 # Test sample data
 
-Small, committed inputs so CI never calls a live API or database. `LAKEHOUSE_DATA_DIR` points dbt here.
+Small inputs committed to the repo, so CI never calls a live API or database. `LAKEHOUSE_DATA_DIR` points dbt here.
 
 ## Weather (`raw_csv/`, `raw_json/`)
 
-3 cities picked for edge cases: London, Montréal (accented name) and Sydney (southern hemisphere, UTC+11). Each has two runs. The run fetched on 2026-11-04 starts a day earlier and is 1 °C warmer than the 2026-11-05 run, so any older value that leaks into the overlap is easy to spot.
+Three cities picked for edge cases: London, Montréal (accented name) and Sydney (UTC+11). Each has two runs; the 4 Nov run is 1 °C warmer than the 5 Nov one, so an old value leaking into the overlap is easy to spot.
 
 ## Crypto (`raw_crypto/`)
 
@@ -22,4 +22,4 @@ Built from the Crypto project's committed recording of 10 Oct 2025 19:00 – 11 
 
 ## Crypto project schema (`crypto_project/schema.sql`)
 
-A copy of the Crypto project's database schema. The Testcontainers tests load it into a throwaway Postgres to test the read-only extract against the real table shapes.
+A copy of the Crypto project's schema. The Testcontainers tests load it into a throwaway Postgres to test the read-only extract.

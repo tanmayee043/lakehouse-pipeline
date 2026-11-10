@@ -1,15 +1,11 @@
 {% docs __overview__ %}
 # Lakehouse Pipeline: data catalog
 
-A batch pipeline that answers one question for crypto trades: **do the live stream and the official history agree?** The [Crypto project](https://github.com/tanmayee043/crypto-streaming-platform) captures Binance.US trades live; this pipeline downloads the exchange's official record of every trade, reconciles the two trade by trade, and fills whatever the live capture missed. A second, smaller dataset holds 7-day hourly weather forecasts for 79 cities.
+Checks whether a live crypto stream missed anything. The [Crypto project](https://github.com/tanmayee043/crypto-streaming-platform) captures Binance.US trades live; this pipeline compares them, trade by trade, with the exchange's official record and fills whatever was missed. The weather models (79 cities) are the starter pipeline I built the patterns on before integrating the crypto trades.
 
-This site is generated from the dbt project on every merge to `main`, built on the repository's small sample data, so row counts here are the sample's, not production's.
+This site rebuilds on every merge from the repo's sample data, so row counts are the sample's, not real ones.
 
-## How to read it
-
-- **Lineage:** open any model and click the graph icon (bottom right) to see where its data comes from and what uses it. Raw sources are green; models are blue.
-- **Contracts:** every mart lists its columns with enforced types and not-null constraints. dbt refuses to build a mart whose shape drifts.
-- **Tests:** each model's page lists the data tests that run on every build.
+**How to read it:** open a model and click the graph icon (bottom right) for its lineage. Each mart page lists its enforced columns (the contract) and the tests that run on every build.
 
 ## Layers
 
@@ -20,9 +16,9 @@ This site is generated from the dbt project on every merge to `main`, built on t
 | Intermediate | `int_trades_compared`: official record vs live capture | `int_weather_latest`: newest forecast per city and hour |
 | Marts | `fct_trades`, `fct_reconciliation_daily`, `fct_ohlcv_daily`, `fct_anomalies_daily`, `fct_trade_gaps` | `dim_city`, `fct_weather_hourly`, `fct_weather_daily` |
 
-Start with **`fct_reconciliation_daily`**: it's the headline table.
+Start with **`fct_reconciliation_daily`**, the headline table.
 
-After each run, the four daily crypto marts are also published as **Apache Iceberg** tables, with a snapshot per change for time travel and readable by any engine. That step runs outside dbt (in Dagster), so it isn't in this lineage graph.
+The four daily crypto marts are also published to **Apache Iceberg** for time travel. That happens in Dagster, after dbt, so it's not in this graph.
 
 ## More
 

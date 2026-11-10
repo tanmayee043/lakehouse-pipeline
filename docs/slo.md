@@ -1,34 +1,23 @@
 # Service level objectives
 
-What the pipeline promises, how each promise is measured, and where it's checked. A missed SLO is reported as a **warning** in dbt and Dagster and on the dashboard; it never stops the pipeline, because the usual causes (the schedule being off, the Crypto project being switched off) aren't fixed by stopping.
+Four promises the pipeline makes: three for crypto, one for the weather starter pipeline. Each one is a dbt test that runs on every build and shows on the dashboard. A miss is a warning, not a failure: the usual causes (a schedule switched off, the Crypto project offline) aren't fixed by stopping the pipeline.
 
-| SLO | Target | Measured as (SLI) | Window | Checked by | Shown on |
-|---|---|---|---|---|---|
-| **Crypto freshness** | Yesterday (UTC) is reconciled by **03:00 UTC** | Newest `trade_date` in `fct_reconciliation_daily` | Each check | dbt test `slo_crypto_reconciled_through_yesterday`; `dbt source freshness` on the exchange record (warns at 36 h, errors at 60 h) | Crypto → Reconciliation → SLO row |
-| **Crypto completeness** | **≥ 99.9%** of official trades captured while the Crypto project was running | `completeness_pct` per symbol and day: captured ÷ official trades inside its capture sessions | Last 30 days | dbt test `slo_crypto_completeness_while_running` | Crypto → Reconciliation → tiles and SLO row |
-| **Crypto agreement** | **0** captured trades that disagree with the official record | Price or quantity mismatches plus captured trades the exchange has no record of | Last 30 days | dbt test `slo_crypto_no_disagreements` | Crypto → Reconciliation → tiles and SLO row |
-| **Weather freshness** | Newest forecast fetched within **26 hours** | Newest `last_fetched_at_utc` in `dim_city` | Each check | dbt test `slo_weather_forecasts_fresh`; `dbt source freshness` (warns at 26 h, errors at 50 h) | Weather → Pipeline health |
-
-The targets live in one place for the pipeline, the `slo_*` variables in `dbt_project/dbt_project.yml`, and are repeated as constants at the top of each dashboard page.
+| SLO | Target | Measured by | If it's missed |
+|---|---|---|---|
+| **Crypto freshness** | Yesterday (UTC) reconciled by 03:00 UTC | Newest day in `fct_reconciliation_daily` | Run yesterday's partition and switch the schedule on ([runbook](runbook.md#re-run-or-backfill)) |
+| **Crypto completeness** | ≥ 99.9% of trades captured while the stream was running (last 30 days) | Captured ÷ official trades inside capture sessions | Nothing to fix here, the trades are already filled. Check the Crypto project's logs |
+| **Crypto agreement** | 0 captured trades that disagree with the exchange (last 30 days) | Price or quantity mismatches, plus trades the exchange doesn't have | [Runbook: Disagrees](runbook.md#what-a-reconciliation-status-means) |
+| **Weather freshness** | Newest forecast under 26 hours old | Newest fetch time in `dim_city` | [Runbook: Data is stale](runbook.md#data-is-stale) |
 
 ## Why these targets
 
-- **03:00 UTC** gives the 02:15 UTC crypto schedule 45 minutes for a day that normally takes 2–4 minutes, so one retry still meets it.
-- **99.9% while running** matches the Crypto project's own completeness SLO. Measuring inside capture sessions keeps it about capture quality: the Crypto project being switched off is reported as downtime, not as a miss ([ADR 9](adr/0009-reconcile-by-trade-id-in-the-capture-window.md)).
-- **0 disagreements**, because a trade ID either has the exchange's price and quantity or it doesn't. Any disagreement is a bug somewhere.
-- **26 hours** is a daily run plus slack for a late start.
+- **03:00 UTC** gives the 02:15 run 45 minutes for a job that takes 2–4, so one retry still makes it.
+- **99.9% while running** matches the Crypto project's own target. Downtime is reported separately, not counted as a miss ([ADR 9](adr/0009-reconcile-by-trade-id-in-the-capture-window.md)).
+- **0 disagreements**, because a trade ID either matches the exchange or it's a bug.
+- **26 hours** is one daily run plus some slack.
 
-## When one is missed
+Targets live in the `slo_*` variables in `dbt_project/dbt_project.yml` and are repeated at the top of each dashboard page, so change both.
 
-| SLO | Most likely cause | What to do |
-|---|---|---|
-| Crypto freshness | The crypto schedule is off, `dagster dev` isn't running, or the day's run failed | Run yesterday's partition ([runbook](runbook.md#crypto-re-run-or-backfill-days)); switch the schedule on |
-| Crypto completeness | The Crypto project lost trades while running (often around a restart) | Nothing to fix here, the trades are already filled. Look at the Crypto project's logs for that time |
-| Crypto agreement | A bug in the Crypto project's storage, or a download problem here | [Runbook: Disagrees](runbook.md#crypto-what-a-reconciliation-status-means) |
-| Weather freshness | The weather schedule is off or the run failed | [Runbook: Data is stale](runbook.md#3-data-is-stale) |
+## Status
 
-## Current status
-
-All four are met on the real data as of 10 Nov: crypto reconciled through 9 Nov (16 days, the Crypto project captured 3 of them), 100% completeness while running, 0 disagreements, and a weather fetch within the last 26 hours. Crypto freshness only holds while the daily schedule is on: before 6 Nov was run, it was missed (newest day 5 Nov), which is how the check was first seen working.
-
-On the CI sample data (`tests/data/`) the two freshness SLOs always warn, because its dates are deliberately fixed in the past. That's expected: warnings don't fail the build.
+All four are met on the real data as of 10 Nov. On the CI sample data the two freshness checks always warn, because the sample's dates are fixed in the past. That's expected.
